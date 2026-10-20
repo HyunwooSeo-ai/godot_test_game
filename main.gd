@@ -128,6 +128,10 @@ func _parse_args() -> Dictionary:
 
 
 func _make_font() -> Font:
+	# 웹에서는 시스템 글꼴을 쓸 수 없어서 나눔고딕(OFL)을 게임에 포함합니다.
+	var bundled := load("res://fonts/NanumGothic-Regular.ttf") as Font
+	if bundled:
+		return bundled
 	var f := SystemFont.new()
 	f.font_names = PackedStringArray(["Malgun Gothic", "맑은 고딕", "Noto Sans CJK KR", "Sans-Serif"])
 	return f

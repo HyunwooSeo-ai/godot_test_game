@@ -33,12 +33,30 @@ Godot은 설치 프로그램 없이 `%USERPROFILE%\Apps\Godot`에 풀어 둔 실
 
 검증할 때는 같은 `--room`으로 `--headless` 봇 두 개를 동시에 띄워 `RESULT`의 `states`, `hits_given`/`hits_taken`, `kills`, `ai_owned`/`ai_seen`을 비교합니다. 혼자 들어간 봇은 `ai_owned: 3`이 나와야 합니다. 화면 확인은 OS 화면 캡처 대신 `--screenshot`을 씁니다. OS 캡처는 다른 창이 찍힐 수 있습니다.
 
+## 웹 빌드와 배포 (Vercel)
+
+웹 버전은 저장소에 커밋한 `web/` 폴더(Godot 웹 내보내기 결과)를 Vercel이 그대로 정적 파일로 서비스합니다. Vercel 빌드 환경에는 Godot가 없으므로 **코드를 바꾸면 로컬에서 다시 내보내고 `web/`까지 함께 커밋**해야 배포에 반영됩니다.
+
+```bash
+# 1) 웹으로 내보내기 (export_presets.cfg의 "Web" 프리셋 → web/index.html)
+"$USERPROFILE/Apps/Godot/Godot_v4.7.2-stable_win64_console.exe" --headless --path . --export-release "Web" web/index.html
+
+# 2) 로컬 확인 → http://localhost:8060
+powershell -ExecutionPolicy Bypass -File tools/serve-web.ps1
+```
+
+- 내보내기 템플릿은 `%APPDATA%\Godot\export_templates\4.7.2.stable\`에 웹용(`web_nothreads_*.zip`)만 풀어 두었습니다. Godot 버전을 올리면 템플릿도 같은 버전으로 다시 받아야 합니다.
+- 단일 스레드 빌드(`variant/thread_support=false`)라서 COOP/COEP 헤더 없이 어느 정적 호스팅에서도 열립니다.
+- `vercel.json`이 빌드·설치 단계를 끄고 `web/`을 출력 폴더로 지정합니다. GitHub `main`에 푸시하면 Vercel이 자동 배포합니다.
+- 웹에서는 시스템 글꼴을 쓸 수 없어 `fonts/NanumGothic-Regular.ttf`(OFL, 라이선스는 `fonts/OFL.txt`)를 포함합니다. 지우면 한글이 깨집니다.
+- 터치 조작은 없어서 휴대폰에서는 플레이할 수 없습니다.
+
 ## 구조
 
 - `main.tscn`: `Node2D` 하나에 `main.gd`만 붙어 있습니다. 메뉴 UI와 게임 화면을 모두 코드로 만들고, 게임 화면은 `_draw()`로 그립니다.
 - `realtime_client.gd`: Godot용 Supabase SDK가 없어서 `WebSocketPeer`로 Phoenix 채널 프로토콜(`vsn=1.0.0`)을 직접 구현했습니다. 참가(`phx_join`), 25초 heartbeat, `broadcast` 송수신, presence `track`/`presence_state`/`presence_diff`만 다룹니다. 다시 track하면 같은 키가 joins와 leaves에 함께 오므로 joins에 없는 키만 퇴장으로 처리합니다.
 - 스크립트끼리는 `class_name` 대신 `preload`로 참조합니다(`const RealtimeClient = preload(...)`). 편집기로 한 번도 import하지 않은 상태에서 헤드리스로 바로 실행해도 깨지지 않게 하려는 것입니다.
-- 한글 글꼴은 `SystemFont`(맑은 고딕)로 잡아 메뉴 Theme과 `draw_string`에 함께 씁니다.
+- 한글 글꼴은 포함한 나눔고딕을 메뉴 Theme과 `draw_string`에 함께 쓰고, 불러오지 못하면 `SystemFont`(맑은 고딕)로 대신합니다.
 
 ### 네트워크 권한 모델
 
