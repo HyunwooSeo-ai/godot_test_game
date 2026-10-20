@@ -1,0 +1,4 @@
+# Godot 4가 자동으로 만드는 캐시
+.godot/
+/android/
+*.tmp
