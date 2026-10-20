@@ -35,6 +35,8 @@ Godot은 설치 프로그램 없이 `%USERPROFILE%\Apps\Godot`에 풀어 둔 실
 
 ## 웹 빌드와 배포 (Vercel)
 
+서비스 주소는 https://godottestgame.vercel.app 이고, Vercel 프로젝트는 팀 `shw4`의 `godot_test_game`입니다(GitHub `HyunwooSeo-ai/godot_test_game`의 `main`과 연결).
+
 웹 버전은 저장소에 커밋한 `web/` 폴더(Godot 웹 내보내기 결과)를 Vercel이 그대로 정적 파일로 서비스합니다. Vercel 빌드 환경에는 Godot가 없으므로 **코드를 바꾸면 로컬에서 다시 내보내고 `web/`까지 함께 커밋**해야 배포에 반영됩니다.
 
 ```bash
