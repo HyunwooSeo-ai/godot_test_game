@@ -12,27 +12,29 @@ const SUPABASE_KEY := "sb_publishable_6CYWcAoFrPU3LZ3MmoKgPA_uOfs8_MP"
 const CHANNEL_PREFIX := "skyduel-"
 
 const ARENA := Vector2(1280, 720)
-const TURN_SPEED := 3.2
-const MIN_SPEED := 140.0
-const MAX_SPEED := 340.0
-const ACCEL := 220.0
-const BULLET_SPEED := 650.0
-const BULLET_LIFE := 1.1
-const FIRE_COOLDOWN := 0.2
-const MAX_HP := 3
-const HIT_RADIUS := 16.0
+const TURN_SPEED := 2.5
+const MIN_SPEED := 100.0
+const MAX_SPEED := 250.0
+const START_SPEED := 160.0
+const ACCEL := 150.0
+const BULLET_SPEED := 480.0
+const BULLET_LIFE := 1.4
+const FIRE_COOLDOWN := 0.25
+const MAX_HP := 4
+const HIT_RADIUS := 19.0
 const RESPAWN_SEC := 2.0
-const SHIELD_SEC := 2.0
+const SHIELD_SEC := 3.0
 const SEND_HZ := 10.0
 const PEER_TIMEOUT := 6.0
 const AI_MAX_COUNT := 8
-const AI_RESPAWN_SEC := 3.0
+const AI_RESPAWN_SEC := 4.0
+const AI_FIRE_RANGE := 430.0
 # 난이도별 AI 성능. turn: 선회 속도, speed: 최고 속도, cooldown: 발사 간격(초),
 # wobble: 조준 흔들림(라디안), cone: 이 각도 안에 들어오면 발사
 const AI_LEVELS := [
-	{"name": "쉬움", "turn": 1.8, "speed": 240.0, "cooldown": 0.9, "wobble": 0.3, "cone": 0.2},
-	{"name": "보통", "turn": 2.4, "speed": 290.0, "cooldown": 0.55, "wobble": 0.15, "cone": 0.25},
-	{"name": "어려움", "turn": 3.0, "speed": 330.0, "cooldown": 0.35, "wobble": 0.06, "cone": 0.3},
+	{"name": "쉬움", "turn": 1.3, "speed": 170.0, "cooldown": 1.5, "wobble": 0.4, "cone": 0.15},
+	{"name": "보통", "turn": 1.7, "speed": 200.0, "cooldown": 1.0, "wobble": 0.25, "cone": 0.2},
+	{"name": "어려움", "turn": 2.2, "speed": 235.0, "cooldown": 0.6, "wobble": 0.12, "cone": 0.25},
 ]
 const SETTINGS_PATH := "user://settings.cfg"
 const AI_NAMES := ["바이퍼", "매버릭", "아이스맨", "피닉스", "행맨", "루스터", "코요테", "페이백"]
@@ -65,6 +67,7 @@ var shield := 0.0
 var fire_cd := 0.0
 var send_left := 0.0
 var bullet_seq := 0
+var bank := 0.0              # 선회할 때 기울어진 정도(-1~1). 그리기에만 씁니다.
 
 var bullets: Array = []      # { bid, owner, pos, vel, life }
 var peers: Dictionary = {}   # id -> { name, color, pos, target, angle, target_angle, speed, hp, alive, score, last_seen }
@@ -76,7 +79,16 @@ var ai_level := 1            # AI_LEVELS 인덱스
 var remote_ai_level := -1    # 방장이 다른 사람일 때 받은 난이도(점수판 표시용)
 var effects: Array = []      # { pos, color, t, dur, size }
 var feed: Array = []         # { text, t }
-var stars: Array = []
+
+# 입체감 연출용 (네트워크와 무관)
+var glints: Array = []       # 바다 물결 반짝임 Vector3(x, y, 위상)
+var islands: Array = []      # { pos, blobs: [Vector3(x, y, r)] }
+var clouds: Array = []       # { pos, puffs: [Vector3(x, y, r)], high, speed }
+var particles: Array = []    # { pos, vel, life, max, size, color, smoke }
+var trails: Dictionary = {}  # 비행기 id -> [[왼쪽 날개 끝, 오른쪽 날개 끝], ...]
+var trail_left := 0.0
+var smoke_left := 0.0
+var hud_box: StyleBoxFlat
 
 var font: Font
 var menu_root: Control
@@ -99,8 +111,7 @@ var stats := {"joined": false, "peers_seen": 0, "states": 0, "shots": 0, "hits_t
 func _ready() -> void:
 	randomize()
 	font = _make_font()
-	for i in 90:
-		stars.append(Vector3(randf() * ARENA.x, randf() * ARENA.y, randf()))
+	_build_scenery()
 	_build_menu()
 	var args := _parse_args()
 	_args = args
@@ -139,12 +150,56 @@ func _make_font() -> Font:
 
 # ---------------------------------------------------------------- 메뉴
 
+func _box(bg: Color, radius: int, border: Color) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = bg
+	sb.set_corner_radius_all(radius)
+	sb.set_border_width_all(1)
+	sb.border_color = border
+	sb.content_margin_left = 14
+	sb.content_margin_right = 14
+	sb.content_margin_top = 8
+	sb.content_margin_bottom = 8
+	sb.anti_aliasing = true
+	return sb
+
+
+func _style_theme(theme: Theme) -> void:
+	# 반투명 유리 패널 + 주황색 강조 버튼
+	var panel := _box(Color(0.03, 0.08, 0.15, 0.82), 18, Color(1, 1, 1, 0.12))
+	panel.shadow_color = Color(0, 0, 0, 0.35)
+	panel.shadow_size = 24
+	theme.set_stylebox("panel", "PanelContainer", panel)
+
+	var field := _box(Color(1, 1, 1, 0.07), 10, Color(1, 1, 1, 0.12))
+	var field_focus := _box(Color(1, 1, 1, 0.1), 10, Color(1, 0.7, 0.35))
+	for type in ["LineEdit", "OptionButton"]:
+		theme.set_stylebox("normal", type, field)
+		theme.set_stylebox("focus", type, field_focus)
+	theme.set_stylebox("hover", "OptionButton", field_focus)
+	theme.set_stylebox("pressed", "OptionButton", field_focus)
+	theme.set_color("font_color", "OptionButton", Color.WHITE)
+	theme.set_color("font_hover_color", "OptionButton", Color.WHITE)
+	theme.set_color("font_pressed_color", "OptionButton", Color.WHITE)
+	theme.set_color("font_focus_color", "OptionButton", Color.WHITE)
+
+	var accent := Color(1.0, 0.56, 0.22)
+	theme.set_stylebox("normal", "Button", _box(accent, 12, accent.lightened(0.3)))
+	theme.set_stylebox("hover", "Button", _box(accent.lightened(0.15), 12, accent.lightened(0.4)))
+	theme.set_stylebox("pressed", "Button", _box(accent.darkened(0.15), 12, accent))
+	theme.set_stylebox("disabled", "Button", _box(Color(0.4, 0.4, 0.45, 0.6), 12, Color(1, 1, 1, 0.1)))
+	theme.set_stylebox("focus", "Button", StyleBoxEmpty.new())
+	for key in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+		theme.set_color(key, "Button", Color(0.12, 0.06, 0.02))
+
 func _build_menu() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
 	var theme := Theme.new()
 	theme.default_font = font
 	theme.default_font_size = 20
+	_style_theme(theme)
+	hud_box = _box(Color(0.02, 0.06, 0.12, 0.55), 10, Color(1, 1, 1, 0.08))
 
 	menu_root = CenterContainer.new()
 	menu_root.theme = theme
@@ -165,7 +220,10 @@ func _build_menu() -> void:
 	var title := Label.new()
 	title.text = "SKY DUEL"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 48)
+	title.add_theme_font_size_override("font_size", 56)
+	title.add_theme_color_override("font_color", Color(1, 0.88, 0.6))
+	title.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.5))
+	title.add_theme_constant_override("shadow_offset_y", 3)
 	box.add_child(title)
 	box.add_child(_label("Supabase Realtime 실시간 공중전", 16, Color(0.7, 0.8, 1.0)))
 
@@ -317,6 +375,7 @@ func _back_to_menu(message: String) -> void:
 	remote_ai_level = -1
 	bullets.clear()
 	feed.clear()
+	trails.clear()
 	menu_root.visible = true
 	join_button.disabled = false
 	status_label.text = message
@@ -352,14 +411,17 @@ func _process(delta: float) -> void:
 			send_left = 1.0 / SEND_HZ
 			_send_state()
 			_send_ai()
+		_update_trails(delta)
 	_update_effects(delta)
+	_update_scenery(delta)
 	queue_redraw()
 
 
 func _spawn() -> void:
 	pos = Vector2(randf_range(80, ARENA.x - 80), randf_range(80, ARENA.y - 80))
 	angle = randf_range(-PI, PI)
-	speed = 200.0
+	speed = START_SPEED
+	bank = 0.0
 	hp = bot_hp if bot_mode else MAX_HP
 	alive = true
 	shield = SHIELD_SEC
@@ -395,6 +457,7 @@ func _update_me(delta: float) -> void:
 		fire = Input.is_physical_key_pressed(KEY_SPACE)
 
 	angle = wrapf(angle + turn * TURN_SPEED * delta, -PI, PI)
+	bank = lerpf(bank, turn, minf(1.0, delta * 5.0))
 	speed = clampf(speed + thrust * ACCEL * delta, MIN_SPEED, MAX_SPEED)
 	pos = _wrap(pos + Vector2.RIGHT.rotated(angle) * speed * delta)
 	if fire and fire_cd <= 0.0:
@@ -405,7 +468,7 @@ func _fire() -> void:
 	fire_cd = FIRE_COOLDOWN
 	bullet_seq += 1
 	var bid := "%s-%d" % [my_id, bullet_seq]
-	var start := _wrap(pos + Vector2.RIGHT.rotated(angle) * 24.0)
+	var start := _wrap(pos + Vector2.RIGHT.rotated(angle) * 30.0)
 	_add_bullet(bid, my_id, start, angle)
 	rt.send_broadcast("shot", {"id": my_id, "bid": bid, "x": start.x, "y": start.y, "a": angle})
 
@@ -445,12 +508,12 @@ func _take_hit(shooter: String, bid: String) -> void:
 	var killed := hp <= 0
 	stats["hits_taken"] += 1
 	rt.send_broadcast("hit", {"victim": my_id, "shooter": shooter, "bid": bid, "hp": hp, "killed": killed})
-	_add_effect(pos, Color(1, 0.9, 0.5), 0.25, 14)
+	_spark(pos)
 	if killed:
 		alive = false
 		deaths += 1
 		respawn_left = RESPAWN_SEC
-		_add_effect(pos, my_color, 0.8, 60)
+		_explode(pos, my_color)
 		_add_feed("%s ▶ %s 격추" % [_name_of(shooter), my_name])
 		if ai_planes.has(shooter):
 			ai_planes[shooter]["score"] = int(ai_planes[shooter]["score"]) + 1
@@ -528,11 +591,11 @@ func _on_hit(p: Dictionary) -> void:
 		var peer: Dictionary = peers[victim]
 		peer["hp"] = int(p.get("hp", 0))
 		where = peer["pos"]
-		_add_effect(where, Color(1, 0.9, 0.5), 0.25, 14)
+		_spark(where)
 	if bool(p.get("killed", false)):
 		if peers.has(victim):
 			peers[victim]["alive"] = false
-			_add_effect(where, peers[victim]["color"], 0.8, 60)
+			_explode(where, peers[victim]["color"])
 		if shooter == my_id:
 			score += 1
 			stats["kills"] += 1
@@ -572,7 +635,11 @@ func _update_peers(delta: float) -> void:
 			peer["pos"] = peer["target"]
 		else:
 			peer["pos"] = _wrap(peer["pos"] + diff * minf(1.0, delta * 10.0))
-		peer["angle"] = lerp_angle(float(peer["angle"]), float(peer["target_angle"]), minf(1.0, delta * 12.0))
+		var prev_angle := float(peer["angle"])
+		peer["angle"] = lerp_angle(prev_angle, float(peer["target_angle"]), minf(1.0, delta * 12.0))
+		# 받은 각도가 바뀌는 속도로 기울기를 추정합니다.
+		var turn_rate := wrapf(float(peer["angle"]) - prev_angle, -PI, PI) / maxf(delta, 0.001)
+		peer["bank"] = lerpf(float(peer.get("bank", 0.0)), clampf(turn_rate / TURN_SPEED, -1.0, 1.0), minf(1.0, delta * 5.0))
 
 
 # ---------------------------------------------------------------- AI 적기
@@ -612,11 +679,12 @@ func _spawn_ai(ai: Dictionary) -> void:
 			break
 	ai["pos"] = at
 	ai["angle"] = randf_range(-PI, PI)
-	ai["speed"] = 180.0
+	ai["speed"] = 150.0
+	ai["bank"] = 0.0
 	ai["hp"] = MAX_HP
 	ai["alive"] = true
 	ai["shield"] = SHIELD_SEC
-	ai["fire_cd"] = 1.0
+	ai["fire_cd"] = 2.0
 	ai["respawn_left"] = 0.0
 
 
@@ -659,8 +727,8 @@ func _update_ai(delta: float) -> void:
 			# 조준에 약간의 흔들림을 넣어 백발백중이 되지 않게 합니다.
 			var diff := wrapf(to.angle() + sin(elapsed * 1.3 + wobble) * float(lv["wobble"]) - a, -PI, PI)
 			turn = clampf(diff * 2.0, -1.0, 1.0)
-			thrust = -1.0 if best_d < 220.0 else 0.4
-			fire = absf(diff) < float(lv["cone"]) and best_d < 520.0
+			thrust = -1.0 if best_d < 200.0 else 0.4
+			fire = absf(diff) < float(lv["cone"]) and best_d < AI_FIRE_RANGE
 
 		# AI끼리 한 덩어리로 뭉치지 않도록 가까운 AI 반대쪽으로 방향을 틉니다.
 		var away := Vector2.ZERO
@@ -673,6 +741,7 @@ func _update_ai(delta: float) -> void:
 			turn = clampf(turn + clampf(wrapf(away.angle() - a, -PI, PI), -1.0, 1.0), -1.0, 1.0)
 
 		a = wrapf(a + turn * float(lv["turn"]) * delta, -PI, PI)
+		ai["bank"] = lerpf(float(ai["bank"]), turn, minf(1.0, delta * 5.0))
 		var v := clampf(float(ai["speed"]) + thrust * ACCEL * delta, MIN_SPEED, float(lv["speed"]))
 		ai["angle"] = a
 		ai["speed"] = v
@@ -682,7 +751,7 @@ func _update_ai(delta: float) -> void:
 			ai["fire_cd"] = float(lv["cooldown"]) + randf() * 0.4
 			ai["fire_seq"] = int(ai["fire_seq"]) + 1
 			var bid := "%s-%d" % [id, ai["fire_seq"]]
-			var start := _wrap(ai["pos"] + Vector2.RIGHT.rotated(a) * 24.0)
+			var start := _wrap(ai["pos"] + Vector2.RIGHT.rotated(a) * 30.0)
 			_add_bullet(bid, str(id), start, a)
 			rt.send_broadcast("shot", {"id": id, "bid": bid, "x": start.x, "y": start.y, "a": a})
 
@@ -692,11 +761,11 @@ func _ai_take_hit(aid: String, shooter: String, bid: String) -> void:
 	ai["hp"] = int(ai["hp"]) - 1
 	var killed := int(ai["hp"]) <= 0
 	rt.send_broadcast("hit", {"victim": aid, "shooter": shooter, "bid": bid, "hp": ai["hp"], "killed": killed})
-	_add_effect(ai["pos"], Color(1, 0.9, 0.5), 0.25, 14)
+	_spark(ai["pos"])
 	if killed:
 		ai["alive"] = false
 		ai["respawn_left"] = AI_RESPAWN_SEC
-		_add_effect(ai["pos"], ai["color"], 0.8, 60)
+		_explode(ai["pos"], ai["color"])
 		_add_feed("%s ▶ %s 격추" % [_name_of(shooter), str(ai["name"])])
 		if shooter == my_id:
 			score += 1
@@ -794,6 +863,7 @@ func _add_effect(at: Vector2, color: Color, dur: float, size: float) -> void:
 
 
 func _update_effects(delta: float) -> void:
+	_update_particles(delta)
 	for i in range(effects.size() - 1, -1, -1):
 		effects[i]["t"] = float(effects[i]["t"]) + delta
 		if float(effects[i]["t"]) >= float(effects[i]["dur"]):
@@ -841,54 +911,342 @@ func _finish_bot() -> void:
 	get_tree().create_timer(0.3).timeout.connect(get_tree().quit)
 
 
+# ---------------------------------------------------------------- 연출 (입체감)
+# 위에서 내려다보는 시점에 비행기 그림자, 높이가 다른 두 층의 구름, 선회할 때의 기울기 음영을 더해
+# 2D 화면이지만 하늘 높이 떠 있는 것처럼 보이게 합니다. 네트워크와는 무관합니다.
+
+const SHADOW_OFFSET := Vector2(18, 26)  # 비행기 그림자 위치. 멀수록 높이 떠 보입니다.
+const PLANE_SCALE := 1.35
+const PLANE_LEFT := [
+	Vector2(22, 0), Vector2(8, -3), Vector2(2, -17), Vector2(-5, -17), Vector2(-4, -3),
+	Vector2(-13, -3), Vector2(-17, -9), Vector2(-21, -9), Vector2(-18, 0),
+]
+const PLANE_RIGHT := [
+	Vector2(22, 0), Vector2(-18, 0), Vector2(-21, 9), Vector2(-17, 9), Vector2(-13, 3),
+	Vector2(-4, 3), Vector2(-5, 17), Vector2(2, 17), Vector2(8, 3),
+]
+const PLANE_SPINE := [
+	Vector2(20, 0), Vector2(6, -2.4), Vector2(-14, -1.6), Vector2(-17, 0), Vector2(-14, 1.6), Vector2(6, 2.4),
+]
+const SEA_TOP := Color(0.10, 0.36, 0.52)
+const SEA_BOTTOM := Color(0.05, 0.20, 0.36)
+const MAX_PARTICLES := 700
+
+
+func _build_scenery() -> void:
+	# 지형은 모든 사람에게 같게 보이도록 고정된 시드로 만듭니다.
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	for i in 70:
+		glints.append(Vector3(rng.randf() * ARENA.x, rng.randf() * ARENA.y, rng.randf() * TAU))
+	var island_spots := [Vector2(260, 200), Vector2(930, 520), Vector2(1080, 170)]
+	for spot in island_spots:
+		var blobs := []
+		for j in rng.randi_range(4, 7):
+			blobs.append(Vector3(rng.randf_range(-60, 60), rng.randf_range(-35, 35), rng.randf_range(26, 48)))
+		islands.append({"pos": spot, "blobs": blobs})
+	for i in 11:
+		var puffs := []
+		for j in rng.randi_range(4, 7):
+			puffs.append(Vector3(rng.randf_range(-55, 55), rng.randf_range(-16, 16), rng.randf_range(16, 34)))
+		var high := i % 3 == 0
+		clouds.append({
+			"pos": Vector2(rng.randf() * ARENA.x, rng.randf() * ARENA.y),
+			"puffs": puffs, "high": high, "speed": 20.0 if high else 8.0,
+		})
+
+
+func _update_scenery(delta: float) -> void:
+	for c in clouds:
+		var p: Vector2 = c["pos"]
+		p.x += float(c["speed"]) * delta
+		if p.x > ARENA.x + 120.0:
+			p.x = -120.0
+		c["pos"] = p
+
+
+func _visible_planes() -> Array:
+	# 그리기와 연출에 쓰는 공통 형식으로 살아 있는 비행기를 모읍니다.
+	var list := []
+	for id in peers:
+		var p: Dictionary = peers[id]
+		if bool(p["alive"]):
+			list.append({
+				"id": str(id), "pos": p["pos"], "angle": float(p["angle"]), "bank": float(p.get("bank", 0.0)),
+				"color": p["color"], "name": str(p["name"]), "hp": int(p["hp"]), "shield": false, "me": false,
+			})
+	for id in ai_planes:
+		var ai: Dictionary = ai_planes[id]
+		if bool(ai["alive"]):
+			list.append({
+				"id": str(id), "pos": ai["pos"], "angle": float(ai["angle"]), "bank": float(ai["bank"]),
+				"color": ai["color"], "name": str(ai["name"]), "hp": int(ai["hp"]),
+				"shield": float(ai["shield"]) > 0.0, "me": false,
+			})
+	if alive:
+		list.append({
+			"id": my_id, "pos": pos, "angle": angle, "bank": bank, "color": my_color,
+			"name": my_name, "hp": hp, "shield": shield > 0.0, "me": true,
+		})
+	return list
+
+
+func _update_trails(delta: float) -> void:
+	trail_left -= delta
+	smoke_left -= delta
+	var sample := trail_left <= 0.0
+	var smoke := smoke_left <= 0.0
+	if sample:
+		trail_left = 0.04
+	if smoke:
+		smoke_left = 0.08
+	if not sample and not smoke:
+		return
+	var seen := {}
+	for pl in _visible_planes():
+		var id: String = pl["id"]
+		seen[id] = true
+		if sample:
+			_push_trail(id, pl["pos"], float(pl["angle"]), float(pl["bank"]))
+		# 체력이 절반 이하면 꼬리에서 연기가 납니다. 한 칸 남으면 검은 연기.
+		if smoke and int(pl["hp"]) * 2 <= MAX_HP and particles.size() < MAX_PARTICLES:
+			var tail: Vector2 = pl["pos"] + Vector2(-18 * PLANE_SCALE, 0).rotated(float(pl["angle"]))
+			var col := Color(0.16, 0.16, 0.18) if int(pl["hp"]) <= 1 else Color(0.78, 0.78, 0.8)
+			particles.append({"pos": tail, "vel": Vector2(randf_range(-8, 8), randf_range(-8, 8)), "life": 0.9, "max": 0.9, "size": 5.0, "color": col, "smoke": true})
+	if sample:
+		for id in trails.keys():
+			if not seen.has(id):
+				trails.erase(id)
+
+
+func _push_trail(id: String, at: Vector2, a: float, b: float) -> void:
+	var t: Array = trails.get(id, [])
+	var half := 17.0 * PLANE_SCALE * _wing_scale(b)
+	t.append([at + Vector2(-3, -half).rotated(a), at + Vector2(-3, half).rotated(a)])
+	if t.size() > 16:
+		t.pop_front()
+	trails[id] = t
+
+
+func _wing_scale(b: float) -> float:
+	# 기울면 날개가 화면에서 짧아 보입니다.
+	return 1.0 - 0.4 * absf(b)
+
+
+func _spark(at: Vector2) -> void:
+	for i in 8:
+		var dir := Vector2.RIGHT.rotated(randf() * TAU)
+		particles.append({"pos": at, "vel": dir * randf_range(60, 160), "life": 0.35, "max": 0.35, "size": 2.5, "color": Color(1, 0.85, 0.4), "smoke": false})
+
+
+func _explode(at: Vector2, color: Color) -> void:
+	_add_effect(at, Color(1, 0.75, 0.35), 0.6, 70)
+	for i in 18:
+		var dir := Vector2.RIGHT.rotated(randf() * TAU)
+		var life := randf_range(0.5, 1.0)
+		particles.append({"pos": at, "vel": dir * randf_range(80, 260), "life": life, "max": life, "size": 3.0, "color": Color(1, randf_range(0.5, 0.9), 0.3), "smoke": false})
+	for i in 5:
+		var dir := Vector2.RIGHT.rotated(randf() * TAU)
+		particles.append({"pos": at, "vel": dir * randf_range(50, 150), "life": 0.9, "max": 0.9, "size": 4.0, "color": color, "smoke": false})
+	for i in 10:
+		var dir := Vector2.RIGHT.rotated(randf() * TAU)
+		var life := randf_range(1.2, 1.8)
+		particles.append({"pos": at, "vel": dir * randf_range(10, 50), "life": life, "max": life, "size": randf_range(10, 16), "color": Color(0.3, 0.3, 0.32), "smoke": true})
+
+
+func _update_particles(delta: float) -> void:
+	var damp := pow(0.15, delta)
+	for i in range(particles.size() - 1, -1, -1):
+		var pt: Dictionary = particles[i]
+		pt["life"] = float(pt["life"]) - delta
+		if float(pt["life"]) <= 0.0:
+			particles.remove_at(i)
+			continue
+		pt["pos"] = pt["pos"] + pt["vel"] * delta
+		pt["vel"] = pt["vel"] * damp
+
+
 # ---------------------------------------------------------------- 그리기
 
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, ARENA), Color(0.05, 0.08, 0.16))
-	for x in range(0, int(ARENA.x), 80):
-		draw_line(Vector2(x, 0), Vector2(x, ARENA.y), Color(1, 1, 1, 0.03))
-	for y in range(0, int(ARENA.y), 80):
-		draw_line(Vector2(0, y), Vector2(ARENA.x, y), Color(1, 1, 1, 0.03))
-	for s in stars:
-		draw_circle(Vector2(s.x, s.y), 0.6 + s.z * 1.2, Color(1, 1, 1, 0.15 + 0.4 * s.z))
+	_draw_sea()
+	for c in clouds:
+		if not bool(c["high"]):
+			_draw_cloud(c, false)
 
+	var planes := _visible_planes() if mode == Mode.PLAYING else []
+	for pl in planes:
+		_draw_plane_shadow(pl)
+	for t in trails.values():
+		_draw_trail(t)
+	for pt in particles:
+		if bool(pt["smoke"]):
+			var k := float(pt["life"]) / float(pt["max"])
+			var c: Color = pt["color"]
+			draw_circle(pt["pos"], float(pt["size"]) * (1.0 + (1.0 - k) * 1.6), Color(c.r, c.g, c.b, 0.4 * k))
 	if mode == Mode.PLAYING:
 		for b in bullets:
-			draw_circle(b["pos"], 3.0, _color_of(str(b["owner"])).lightened(0.4))
-		for peer in peers.values():
-			if bool(peer["alive"]):
-				_draw_plane(peer["pos"], float(peer["angle"]), peer["color"], str(peer["name"]), int(peer["hp"]), false)
-		for ai in ai_planes.values():
-			if bool(ai["alive"]):
-				_draw_plane(ai["pos"], float(ai["angle"]), ai["color"], str(ai["name"]), int(ai["hp"]), float(ai["shield"]) > 0.0)
-		if alive:
-			_draw_plane(pos, angle, my_color, my_name + " (나)", hp, shield > 0.0)
-
+			_draw_bullet(b)
+	for pl in planes:
+		_draw_plane(pl)
+	for pt in particles:
+		if not bool(pt["smoke"]):
+			var k := float(pt["life"]) / float(pt["max"])
+			var c: Color = pt["color"]
+			draw_circle(pt["pos"], float(pt["size"]) * k + 0.5, Color(c.r, c.g, c.b, k))
 	for e in effects:
 		var k := float(e["t"]) / float(e["dur"])
 		var c: Color = e["color"]
-		draw_circle(e["pos"], float(e["size"]) * (0.3 + k * 0.7), Color(c.r, c.g, c.b, 0.5 * (1.0 - k)))
-		draw_arc(e["pos"], float(e["size"]) * k, 0, TAU, 32, Color(1, 1, 1, 1.0 - k), 2.0)
+		draw_circle(e["pos"], float(e["size"]) * (0.25 + k * 0.5), Color(c.r, c.g, c.b, 0.45 * (1.0 - k)))
+		draw_arc(e["pos"], float(e["size"]) * k, 0, TAU, 40, Color(1, 1, 1, 0.9 * (1.0 - k)), 2.5, true)
+
+	# 높은 구름은 비행기 위를 지나가며 살짝 가립니다.
+	for c in clouds:
+		if bool(c["high"]):
+			_draw_cloud(c, true)
+	_draw_vignette()
 
 	if mode == Mode.PLAYING:
+		for pl in planes:
+			_draw_plane_label(pl)
 		_draw_hud()
 
 
-func _draw_plane(at: Vector2, a: float, color: Color, label: String, hp_value: int, shielded: bool) -> void:
+func _draw_sea() -> void:
+	draw_polygon(
+		PackedVector2Array([Vector2.ZERO, Vector2(ARENA.x, 0), ARENA, Vector2(0, ARENA.y)]),
+		PackedColorArray([SEA_TOP, SEA_TOP.lerp(SEA_BOTTOM, 0.3), SEA_BOTTOM, SEA_BOTTOM.lerp(SEA_TOP, 0.2)]))
+	for g in glints:
+		var a := 0.05 + 0.1 * (0.5 + 0.5 * sin(elapsed * 1.6 + g.z))
+		var x := fposmod(g.x + elapsed * 5.0, ARENA.x)
+		draw_line(Vector2(x - 6, g.y), Vector2(x + 6, g.y), Color(1, 1, 1, a), 1.5)
+	# 섬: 얕은 바다 → 모래 → 숲 → 볕 드는 쪽 순서로 겹쳐 그립니다.
+	for isl in islands:
+		var c: Vector2 = isl["pos"]
+		for bl in isl["blobs"]:
+			draw_circle(c + Vector2(bl.x, bl.y), bl.z + 24, Color(0.4, 0.75, 0.78, 0.3))
+		for bl in isl["blobs"]:
+			draw_circle(c + Vector2(bl.x, bl.y), bl.z + 7, Color(0.86, 0.8, 0.6))
+		for bl in isl["blobs"]:
+			draw_circle(c + Vector2(bl.x, bl.y), bl.z, Color(0.25, 0.5, 0.3))
+		for bl in isl["blobs"]:
+			draw_circle(c + Vector2(bl.x - bl.z * 0.25, bl.y - bl.z * 0.3), bl.z * 0.55, Color(0.34, 0.6, 0.35))
+
+
+func _draw_cloud(c: Dictionary, high: bool) -> void:
+	var p: Vector2 = c["pos"]
+	if not high:
+		for pf in c["puffs"]:
+			draw_circle(p + Vector2(pf.x, pf.y) + Vector2(40, 52), pf.z, Color(0, 0.05, 0.1, 0.12))
+	var alpha := 0.2 if high else 0.75
+	# 바깥쪽에 옅은 테두리를 한 겹 더 그려 구름 가장자리를 부드럽게 합니다.
+	for pf in c["puffs"]:
+		draw_circle(p + Vector2(pf.x, pf.y), pf.z * 1.18, Color(0.84, 0.89, 0.95, alpha * 0.3))
+	for pf in c["puffs"]:
+		draw_circle(p + Vector2(pf.x, pf.y), pf.z, Color(0.84, 0.89, 0.95, alpha * 0.8))
+	for pf in c["puffs"]:
+		draw_circle(p + Vector2(pf.x - pf.z * 0.2, pf.y - pf.z * 0.25), pf.z * 0.7, Color(1, 1, 1, alpha * 0.8))
+
+
+func _draw_vignette() -> void:
+	var e := Color(0, 0.02, 0.06, 0.45)
+	var z := Color(0, 0.02, 0.06, 0.0)
+	var w := ARENA.x
+	var h := ARENA.y
+	var bw := 110.0
+	_quad(Vector2(0, 0), Vector2(w, 0), Vector2(w, bw), Vector2(0, bw), e, e, z, z)
+	_quad(Vector2(0, h - bw), Vector2(w, h - bw), Vector2(w, h), Vector2(0, h), z, z, e, e)
+	_quad(Vector2(0, 0), Vector2(bw, 0), Vector2(bw, h), Vector2(0, h), e, z, z, e)
+	_quad(Vector2(w - bw, 0), Vector2(w, 0), Vector2(w, h), Vector2(w - bw, h), z, e, e, z)
+
+
+func _quad(p0: Vector2, p1: Vector2, p2: Vector2, p3: Vector2, c0: Color, c1: Color, c2: Color, c3: Color) -> void:
+	draw_polygon(PackedVector2Array([p0, p1, p2, p3]), PackedColorArray([c0, c1, c2, c3]))
+
+
+func _shape(src: Array, at: Vector2, a: float, ws: float) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for v in src:
+		out.append(at + (Vector2(v.x, v.y * ws) * PLANE_SCALE).rotated(a))
+	return out
+
+
+func _shade(c: Color, k: float) -> Color:
+	return c.lightened(k) if k >= 0.0 else c.darkened(-k)
+
+
+func _draw_plane_shadow(pl: Dictionary) -> void:
+	var ws := _wing_scale(float(pl["bank"])) * 0.85
 	var pts := PackedVector2Array()
 	for v in PLANE_SHAPE:
-		pts.append(at + (v as Vector2).rotated(a))
-	var body := color
-	if shielded and int(elapsed * 10) % 2 == 0:
-		body.a = 0.35
-	draw_colored_polygon(pts, body)
-	pts.append(pts[0])
-	draw_polyline(pts, body.darkened(0.5), 1.5)
-	draw_circle(at + Vector2(7, 0).rotated(a), 3.0, Color(0.2, 0.3, 0.5, body.a))
-	draw_string(font, at + Vector2(-60, -30), label, HORIZONTAL_ALIGNMENT_CENTER, 120, 14, Color(1, 1, 1, 0.9))
+		pts.append(pl["pos"] + SHADOW_OFFSET + (Vector2(v.x * 0.85, v.y * ws) * PLANE_SCALE).rotated(float(pl["angle"])))
+	draw_colored_polygon(pts, Color(0, 0.04, 0.1, 0.3))
+
+
+func _draw_plane(pl: Dictionary) -> void:
+	var at: Vector2 = pl["pos"]
+	var a := float(pl["angle"])
+	var b := clampf(float(pl["bank"]), -1.0, 1.0)
+	var color: Color = pl["color"]
+	var ws := _wing_scale(b)
+	# 빛이 왼쪽 위에서 온다고 보고, 선회 방향으로 내려간 날개는 어둡게 칠합니다.
+	draw_colored_polygon(_shape(PLANE_LEFT, at, a, ws), _shade(color, 0.22 + 0.3 * b))
+	draw_colored_polygon(_shape(PLANE_RIGHT, at, a, ws), _shade(color, -0.12 - 0.3 * b))
+	draw_colored_polygon(_shape(PLANE_SPINE, at, a, 1.0), _shade(color, 0.45))
+	var outline := _shape(PLANE_SHAPE, at, a, ws)
+	outline.append(outline[0])
+	draw_polyline(outline, color.darkened(0.6), 1.2, true)
+	# 조종석 유리와 반사광
+	draw_circle(at + (Vector2(8, 0) * PLANE_SCALE).rotated(a), 3.4 * PLANE_SCALE, Color(0.12, 0.2, 0.32))
+	draw_circle(at + (Vector2(9, -1) * PLANE_SCALE).rotated(a), 1.3 * PLANE_SCALE, Color(0.8, 0.95, 1, 0.8))
+	# 엔진 불꽃
+	var flame := 0.6 + 0.4 * sin(elapsed * 40.0 + at.x)
+	draw_circle(at + (Vector2(-19, 0) * PLANE_SCALE).rotated(a), (2.5 + flame) * PLANE_SCALE, Color(1, 0.65, 0.25, 0.75))
+	draw_circle(at + (Vector2(-19, 0) * PLANE_SCALE).rotated(a), 1.4 * PLANE_SCALE, Color(1, 0.95, 0.8))
+	if bool(pl["shield"]):
+		var pulse := 0.35 + 0.2 * sin(elapsed * 8.0)
+		draw_circle(at, 38, Color(0.55, 0.85, 1.0, pulse * 0.25))
+		draw_arc(at, 38, 0, TAU, 40, Color(0.55, 0.85, 1.0, pulse), 2.0, true)
+
+
+func _draw_plane_label(pl: Dictionary) -> void:
+	var at: Vector2 = pl["pos"]
+	var label := str(pl["name"]) + (" (나)" if bool(pl["me"]) else "")
+	_text(at + Vector2(-70, -40), label, 14, Color(1, 1, 1, 0.95), HORIZONTAL_ALIGNMENT_CENTER, 140)
+	var hp_value := int(pl["hp"])
+	var x0 := at.x - (MAX_HP * 11 - 2) / 2.0
+	draw_rect(Rect2(x0 - 2, at.y + 31, MAX_HP * 11 + 2, 7), Color(0, 0, 0, 0.35))
 	for i in MAX_HP:
-		var c := Color(0.4, 1.0, 0.5) if i < hp_value else Color(1, 1, 1, 0.15)
-		draw_rect(Rect2(at + Vector2(-15 + i * 11, 24), Vector2(9, 4)), c)
+		var c := Color(1, 1, 1, 0.18)
+		if i < hp_value:
+			c = Color(1, 0.55, 0.35) if hp_value * 2 <= MAX_HP else Color(0.45, 1.0, 0.55)
+		draw_rect(Rect2(x0 + i * 11, at.y + 32, 9, 5), c)
+
+
+func _draw_trail(t: Array) -> void:
+	var n := t.size()
+	for side in 2:
+		for i in range(1, n):
+			var p0: Vector2 = t[i - 1][side]
+			var p1: Vector2 = t[i][side]
+			if p0.distance_to(p1) > 60.0:
+				continue  # 화면 끝을 넘어간 구간
+			var k := float(i) / n
+			draw_line(p0, p1, Color(1, 1, 1, 0.28 * k), 0.6 + 1.4 * k)
+
+
+func _draw_bullet(b: Dictionary) -> void:
+	var p: Vector2 = b["pos"]
+	var dir := (b["vel"] as Vector2).normalized()
+	var c := _color_of(str(b["owner"])).lightened(0.5)
+	draw_line(p - dir * 14, p, Color(c.r, c.g, c.b, 0.35), 5.0)
+	draw_line(p - dir * 9, p, Color(1, 1, 0.85, 0.95), 2.0)
+	draw_circle(p, 2.0, Color.WHITE)
+
+
+func _text(at: Vector2, text: String, size: int, color: Color, align := HORIZONTAL_ALIGNMENT_LEFT, width := -1.0) -> void:
+	draw_string(font, at + Vector2(1, 1.5), text, align, width, size, Color(0, 0, 0, 0.55 * color.a))
+	draw_string(font, at, text, align, width, size, color)
 
 
 func _draw_hud() -> void:
@@ -899,11 +1257,19 @@ func _draw_hud() -> void:
 	var level := ai_level if not ai_planes.is_empty() else remote_ai_level
 	var ai_text := "AI %d대" % shown_ai
 	if shown_ai > 0 and level >= 0 and level < AI_LEVELS.size():
-		ai_text += "(%s)" % AI_LEVELS[level]["name"]
-	draw_string(font, Vector2(16, 30), "방: %s   접속 %d명   %s   격추 %d   추락 %d" % [room, _humans().size(), ai_text, score, deaths], HORIZONTAL_ALIGNMENT_LEFT, -1, 18)
-	var y := 58.0
+		ai_text += " (%s)" % AI_LEVELS[level]["name"]
+
+	var info := "방 %s   ·   접속 %d명   ·   %s" % [room, _humans().size(), ai_text]
+	var info_w := font.get_string_size(info, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x
+	draw_style_box(hud_box, Rect2(12, 10, info_w + 32, 34))
+	_text(Vector2(28, 33), info, 16, Color(0.92, 0.96, 1))
+	var mine := "격추 %d   추락 %d" % [score, deaths]
+	var mine_w := font.get_string_size(mine, HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x
+	draw_style_box(hud_box, Rect2(12, 50, mine_w + 32, 36))
+	_text(Vector2(28, 75), mine, 18, Color(1, 0.86, 0.45))
+	var y := 112.0
 	for f in feed:
-		draw_string(font, Vector2(16, y), str(f["text"]), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 1, 1, clampf(float(f["t"]), 0.0, 1.0)))
+		_text(Vector2(18, y), str(f["text"]), 15, Color(1, 1, 1, clampf(float(f["t"]), 0.0, 1.0)))
 		y += 22.0
 
 	var board := [{"name": my_name, "score": score, "color": my_color, "me": true}]
@@ -912,16 +1278,19 @@ func _draw_hud() -> void:
 	for ai in ai_planes.values():
 		board.append({"name": ai["name"], "score": ai["score"], "color": ai["color"], "me": false})
 	board.sort_custom(func(l: Dictionary, r: Dictionary) -> bool: return int(l["score"]) > int(r["score"]))
-	draw_rect(Rect2(ARENA.x - 236, 12, 220, 34 + board.size() * 24), Color(0, 0, 0, 0.35))
-	draw_string(font, Vector2(ARENA.x - 224, 36), "점수판", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0.8, 0.85, 1.0))
-	var row := 62.0
+	var bx := ARENA.x - 252.0
+	draw_style_box(hud_box, Rect2(bx, 10, 240, 44 + board.size() * 26))
+	_text(Vector2(bx + 16, 36), "점수판", 15, Color(0.7, 0.82, 1.0))
+	var row := 64.0
 	for entry in board:
-		var txt := str(entry["name"]) + (" ★" if entry["me"] else "")
-		draw_circle(Vector2(ARENA.x - 216, row - 6), 5, entry["color"])
-		draw_string(font, Vector2(ARENA.x - 204, row), txt, HORIZONTAL_ALIGNMENT_LEFT, 140, 16)
-		draw_string(font, Vector2(ARENA.x - 64, row), str(entry["score"]), HORIZONTAL_ALIGNMENT_RIGHT, 40, 16)
-		row += 24.0
+		if bool(entry["me"]):
+			draw_rect(Rect2(bx + 6, row - 18, 228, 24), Color(1, 1, 1, 0.08))
+		draw_circle(Vector2(bx + 20, row - 6), 5, entry["color"])
+		_text(Vector2(bx + 32, row), str(entry["name"]), 15, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT, 150)
+		_text(Vector2(bx + 180, row), str(entry["score"]), 15, Color(1, 0.86, 0.45), HORIZONTAL_ALIGNMENT_RIGHT, 44)
+		row += 26.0
 
 	if not alive:
-		draw_string(font, Vector2(0, ARENA.y / 2), "격추되었습니다! %.1f초 뒤 다시 출격" % maxf(respawn_left, 0.0), HORIZONTAL_ALIGNMENT_CENTER, ARENA.x, 28, Color(1, 0.6, 0.5))
-	draw_string(font, Vector2(16, ARENA.y - 16), "←→/AD 회전  ↑↓/WS 속도  Space 발사  Esc 나가기", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(1, 1, 1, 0.5))
+		draw_style_box(hud_box, Rect2(ARENA.x / 2 - 240, ARENA.y / 2 - 42, 480, 64))
+		_text(Vector2(0, ARENA.y / 2), "격추되었습니다! %.1f초 뒤 다시 출격" % maxf(respawn_left, 0.0), 24, Color(1, 0.68, 0.55), HORIZONTAL_ALIGNMENT_CENTER, ARENA.x)
+	_text(Vector2(18, ARENA.y - 18), "←→ / A D 회전    ↑↓ / W S 속도    Space 발사    Esc 나가기", 14, Color(1, 1, 1, 0.7))

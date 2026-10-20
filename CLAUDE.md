@@ -58,6 +58,7 @@ powershell -ExecutionPolicy Bypass -File tools/serve-web.ps1
 - `main.tscn`: `Node2D` 하나에 `main.gd`만 붙어 있습니다. 메뉴 UI와 게임 화면을 모두 코드로 만들고, 게임 화면은 `_draw()`로 그립니다.
 - `realtime_client.gd`: Godot용 Supabase SDK가 없어서 `WebSocketPeer`로 Phoenix 채널 프로토콜(`vsn=1.0.0`)을 직접 구현했습니다. 참가(`phx_join`), 25초 heartbeat, `broadcast` 송수신, presence `track`/`presence_state`/`presence_diff`만 다룹니다. 다시 track하면 같은 키가 joins와 leaves에 함께 오므로 joins에 없는 키만 퇴장으로 처리합니다.
 - 스크립트끼리는 `class_name` 대신 `preload`로 참조합니다(`const RealtimeClient = preload(...)`). 편집기로 한 번도 import하지 않은 상태에서 헤드리스로 바로 실행해도 깨지지 않게 하려는 것입니다.
+- 화면은 위에서 내려다보는 2D지만 `main.gd`의 "연출" 섹션이 입체감을 더합니다: 비행기 그림자(`SHADOW_OFFSET`), 아래·위 두 층 구름, 선회 기울기(`bank`)에 따른 날개 음영, 비행운, 연기·폭발 파티클. 이 값들은 네트워크로 보내지 않고 각자 계산합니다(남의 기울기는 각도 변화로 추정). 지형은 고정 시드라 모두에게 같게 보입니다.
 - 한글 글꼴은 포함한 나눔고딕을 메뉴 Theme과 `draw_string`에 함께 쓰고, 불러오지 못하면 `SystemFont`(맑은 고딕)로 대신합니다.
 
 ### 네트워크 권한 모델
