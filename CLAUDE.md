@@ -53,6 +53,13 @@ powershell -ExecutionPolicy Bypass -File tools/serve-web.ps1
 - 웹에서는 시스템 글꼴을 쓸 수 없어 `fonts/NanumGothic-Regular.ttf`(OFL, 라이선스는 `fonts/OFL.txt`)를 포함합니다. 지우면 한글이 깨집니다.
 - 터치 조작은 없어서 휴대폰에서는 플레이할 수 없습니다.
 
+### SEO · AEO · GEO
+
+- `web_shell.html`이 웹 내보내기의 HTML 셸입니다(`export_presets.cfg`의 `html/custom_html_shell`). Godot 기본 셸을 바탕으로 메타 태그, Open Graph/X 카드, canonical, JSON-LD(`WebSite`, `VideoGame`+`WebApplication`, `FAQPage`)와 "게임 정보" 버튼으로 여는 본문(`<main id="about">`)을 더했습니다. `web/index.html`은 내보낼 때마다 덮어써지므로 **고칠 때는 `web_shell.html`을 고칩니다.**
+- FAQ는 JSON-LD와 본문 두 곳에 같은 내용으로 있습니다. 게임 규칙(체력, 속도, AI 설정 등)을 바꾸면 두 곳과 `web/llms.txt`를 함께 고칩니다.
+- 엔진이 시작하면서 문서 제목을 프로젝트 이름으로 바꾸기 때문에, 셸의 스크립트가 `MutationObserver`로 검색용 `<title>`을 되돌립니다. `project.godot`의 `config/name`은 바꾸지 않습니다(`user://` 저장 위치가 바뀝니다).
+- `web/`에 직접 둔 정적 파일: `robots.txt`(AI 크롤러 포함 전체 허용), `sitemap.xml`, `llms.txt`, `og-image.png`(1200×630). 내보내기는 `index.*`만 덮어쓰므로 지워지지 않습니다. 날짜가 바뀌는 큰 변경이면 `sitemap.xml`의 `lastmod`를 갱신합니다.
+
 ## 구조
 
 - `main.tscn`: `Node2D` 하나에 `main.gd`만 붙어 있습니다. 메뉴 UI와 게임 화면을 모두 코드로 만들고, 게임 화면은 `_draw()`로 그립니다.

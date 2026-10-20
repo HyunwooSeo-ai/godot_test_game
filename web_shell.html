@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="ko">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
+		<title>Sky Duel - 브라우저에서 바로 하는 실시간 비행기 공중전 게임</title>
+		<meta name="description" content="Sky Duel(스카이 듀얼)은 설치 없이 웹 브라우저에서 바로 즐기는 무료 실시간 멀티플레이 비행기 공중전 게임입니다. 같은 방 이름으로 친구와 대결하거나 AI 적기와 싸워 보세요.">
+		<meta name="keywords" content="비행기 게임, 공중전 게임, 웹 게임, 브라우저 게임, 멀티플레이 게임, 슈팅 게임, 무료 게임, Sky Duel, 스카이 듀얼, Godot">
+		<meta name="robots" content="index, follow, max-image-preview:large">
+		<meta name="author" content="HyunwooSeo-ai">
+		<meta name="theme-color" content="#0b2a42">
+		<link rel="canonical" href="https://godottestgame.vercel.app/">
+
+		<!-- 공유 미리보기 (Open Graph, X) -->
+		<meta property="og:type" content="website">
+		<meta property="og:site_name" content="Sky Duel">
+		<meta property="og:locale" content="ko_KR">
+		<meta property="og:title" content="Sky Duel - 실시간 비행기 공중전 웹 게임">
+		<meta property="og:description" content="설치 없이 브라우저에서 바로! 친구와 같은 방에서 실시간 공중전을 벌이거나 AI 적기와 싸우는 무료 멀티플레이 게임.">
+		<meta property="og:url" content="https://godottestgame.vercel.app/">
+		<meta property="og:image" content="https://godottestgame.vercel.app/og-image.png">
+		<meta property="og:image:width" content="1200">
+		<meta property="og:image:height" content="630">
+		<meta property="og:image:alt" content="바다와 섬 위를 나는 비행기들이 공중전을 벌이는 Sky Duel 게임 화면">
+		<meta name="twitter:card" content="summary_large_image">
+		<meta name="twitter:title" content="Sky Duel - 실시간 비행기 공중전 웹 게임">
+		<meta name="twitter:description" content="설치 없이 브라우저에서 바로 즐기는 무료 멀티플레이 비행기 공중전 게임.">
+		<meta name="twitter:image" content="https://godottestgame.vercel.app/og-image.png">
+
+		<!-- 구조화 데이터: 검색엔진과 AI 답변 엔진이 게임 정보와 FAQ를 이해하도록 합니다. 본문 FAQ와 내용을 맞춰 둡니다. -->
+		<script type="application/ld+json">
+{
+	"@context": "https://schema.org",
+	"@graph": [
+		{
+			"@type": "WebSite",
+			"@id": "https://godottestgame.vercel.app/#website",
+			"url": "https://godottestgame.vercel.app/",
+			"name": "Sky Duel",
+			"alternateName": "스카이 듀얼",
+			"inLanguage": "ko-KR"
+		},
+		{
+			"@type": ["VideoGame", "WebApplication"],
+			"@id": "https://godottestgame.vercel.app/#game",
+			"name": "Sky Duel",
+			"alternateName": "스카이 듀얼",
+			"url": "https://godottestgame.vercel.app/",
+			"image": "https://godottestgame.vercel.app/og-image.png",
+			"description": "설치 없이 웹 브라우저에서 바로 즐기는 무료 실시간 멀티플레이 비행기 공중전 게임. 같은 방 이름으로 들어온 사람들과 대결하고, 혼자서도 AI 적기(0~8대, 난이도 3단계)와 싸울 수 있습니다.",
+			"inLanguage": "ko-KR",
+			"genre": ["슈팅", "공중전", "아케이드", "멀티플레이"],
+			"gamePlatform": "Web browser",
+			"applicationCategory": "GameApplication",
+			"operatingSystem": "Windows, macOS, Linux (데스크톱 웹 브라우저)",
+			"playMode": ["SinglePlayer", "MultiPlayer"],
+			"isAccessibleForFree": true,
+			"offers": { "@type": "Offer", "price": "0", "priceCurrency": "KRW" },
+			"author": { "@type": "Person", "name": "HyunwooSeo-ai", "url": "https://github.com/HyunwooSeo-ai" },
+			"sameAs": ["https://github.com/HyunwooSeo-ai/godot_test_game"],
+			"isPartOf": { "@id": "https://godottestgame.vercel.app/#website" }
+		},
+		{
+			"@type": "FAQPage",
+			"@id": "https://godottestgame.vercel.app/#faq",
+			"mainEntity": [
+				{
+					"@type": "Question",
+					"name": "Sky Duel은 무료인가요?",
+					"acceptedAnswer": { "@type": "Answer", "text": "네. Sky Duel은 무료이며 회원가입 없이 닉네임만 정하면 바로 플레이할 수 있습니다." }
+				},
+				{
+					"@type": "Question",
+					"name": "게임을 설치해야 하나요?",
+					"acceptedAnswer": { "@type": "Answer", "text": "아니요. 크롬, 엣지, 파이어폭스 같은 최신 데스크톱 브라우저에서 링크를 열면 바로 실행됩니다. 처음 접속할 때 약 40MB의 게임 엔진 파일을 내려받습니다." }
+				},
+				{
+					"@type": "Question",
+					"name": "친구와 함께 플레이하려면 어떻게 하나요?",
+					"acceptedAnswer": { "@type": "Answer", "text": "시작 메뉴에서 친구와 같은 방 이름을 입력하고 출격하면 같은 하늘에서 실시간으로 대결합니다. 위치와 총알은 Supabase Realtime으로 동기화됩니다." }
+				},
+				{
+					"@type": "Question",
+					"name": "혼자서도 할 수 있나요?",
+					"acceptedAnswer": { "@type": "Answer", "text": "네. 시작 메뉴에서 AI 적기를 0~8대, 난이도를 쉬움·보통·어려움 중에서 고를 수 있습니다. 여럿이 함께할 때는 방장 한 명의 AI 설정을 따릅니다." }
+				},
+				{
+					"@type": "Question",
+					"name": "조작 방법은 무엇인가요?",
+					"acceptedAnswer": { "@type": "Answer", "text": "방향키 ←→ 또는 A·D로 선회, ↑↓ 또는 W·S로 속도 조절, 스페이스바로 발사, Esc로 메뉴로 나갑니다." }
+				},
+				{
+					"@type": "Question",
+					"name": "휴대폰에서도 할 수 있나요?",
+					"acceptedAnswer": { "@type": "Answer", "text": "지금은 키보드 조작만 지원해서 데스크톱이나 노트북 브라우저에서 플레이하는 것을 권장합니다." }
+				}
+			]
+		}
+	]
+}
+		</script>
+		<style>
+html, body, #canvas {
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
+body {
+	color: white;
+	background-color: black;
+	overflow: hidden;
+	touch-action: none;
+}
+
+#canvas {
+	display: block;
+}
+
+#canvas:focus {
+	outline: none;
+}
+
+#status, #status-splash, #status-progress {
+	position: absolute;
+	left: 0;
+	right: 0;
+}
+
+#status, #status-splash {
+	top: 0;
+	bottom: 0;
+}
+
+#status {
+	background-color: $GODOT_SPLASH_COLOR;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	align-items: center;
+	visibility: hidden;
+}
+
+#status-splash {
+	max-height: 100%;
+	max-width: 100%;
+	margin: auto;
+}
+
+#status-splash.show-image--false {
+	display: none;
+}
+
+#status-splash.fullsize--true {
+	height: 100%;
+	width: 100%;
+	object-fit: contain;
+}
+
+#status-splash.use-filter--false {
+	image-rendering: pixelated;
+}
+
+#status-progress, #status-notice {
+	display: none;
+}
+
+#status-progress {
+	bottom: 10%;
+	width: 50%;
+	margin: 0 auto;
+}
+
+#status-notice {
+	background-color: #5b3943;
+	border-radius: 0.5rem;
+	border: 1px solid #9b3943;
+	color: #e0e0e0;
+	font-family: 'Noto Sans', 'Droid Sans', Arial, sans-serif;
+	line-height: 1.3;
+	margin: 0 2rem;
+	overflow: hidden;
+	padding: 1rem;
+	text-align: center;
+	z-index: 1;
+}
+
+/* 게임 소개 패널: 검색엔진과 AI가 읽을 수 있는 본문. 버튼으로 열고 닫습니다. */
+#info-toggle {
+	position: fixed;
+	right: 16px;
+	bottom: 16px;
+	z-index: 20;
+	padding: 8px 14px;
+	border: 1px solid rgba(255, 255, 255, 0.2);
+	border-radius: 999px;
+	background: rgba(4, 14, 28, 0.75);
+	color: #f2f6ff;
+	font: 14px/1.2 system-ui, 'Malgun Gothic', sans-serif;
+	cursor: pointer;
+}
+
+#info-toggle:hover {
+	background: rgba(4, 14, 28, 0.92);
+}
+
+#about {
+	position: fixed;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 19;
+	box-sizing: border-box;
+	width: min(440px, 100vw);
+	padding: 28px 26px 80px;
+	overflow-y: auto;
+	background: rgba(4, 14, 28, 0.95);
+	color: #dfe8f7;
+	font: 15px/1.65 system-ui, 'Malgun Gothic', sans-serif;
+	box-shadow: -12px 0 32px rgba(0, 0, 0, 0.4);
+}
+
+#about[hidden] {
+	display: none;
+}
+
+#about h1 {
+	margin: 0 0 12px;
+	color: #ffe0a0;
+	font-size: 22px;
+	line-height: 1.35;
+}
+
+#about h2 {
+	margin: 24px 0 8px;
+	color: #ffffff;
+	font-size: 17px;
+}
+
+#about h3 {
+	margin: 14px 0 4px;
+	color: #ffd08a;
+	font-size: 15px;
+}
+
+#about p, #about ul {
+	margin: 0 0 8px;
+}
+
+#about ul {
+	padding-left: 20px;
+}
+
+#about a {
+	color: #8cc8ff;
+}
+
+#about kbd {
+	padding: 1px 6px;
+	border: 1px solid rgba(255, 255, 255, 0.3);
+	border-radius: 4px;
+	font-size: 13px;
+}
+
+#about footer {
+	margin-top: 24px;
+	color: #9fb0c8;
+	font-size: 13px;
+}
+		</style>
+		$GODOT_HEAD_INCLUDE
+	</head>
+	<body>
+		<canvas id="canvas" aria-label="Sky Duel 게임 화면">
+			이 브라우저는 canvas를 지원하지 않습니다.
+		</canvas>
+
+		<noscript>
+			Sky Duel을 플레이하려면 JavaScript를 켜 주세요.
+		</noscript>
+
+		<div id="status">
+			<img id="status-splash" class="$GODOT_SPLASH_CLASSES" src="$GODOT_SPLASH" alt="">
+			<progress id="status-progress"></progress>
+			<div id="status-notice"></div>
+		</div>
+
+		<button id="info-toggle" type="button" aria-controls="about" aria-expanded="false">게임 정보</button>
+
+		<main id="about" hidden>
+			<article>
+				<h1>Sky Duel - 브라우저에서 바로 하는 실시간 비행기 공중전</h1>
+				<p>Sky Duel(스카이 듀얼)은 설치 없이 웹 브라우저에서 바로 즐기는 무료 2D 멀티플레이 비행기 슈팅 게임입니다. 같은 방 이름으로 들어온 사람들과 실시간으로 공중전을 벌이고, 혼자서도 AI 적기와 싸울 수 있습니다.</p>
+
+				<h2>주요 특징</h2>
+				<ul>
+					<li>실시간 멀티플레이: 같은 방 이름을 입력한 사람끼리 같은 하늘에서 대결합니다.</li>
+					<li>AI 적기: 0~8대, 난이도 쉬움·보통·어려움을 시작 메뉴에서 고릅니다.</li>
+					<li>설치 불필요: 링크만 열면 데스크톱 브라우저에서 바로 실행됩니다.</li>
+					<li>입체감 있는 화면: 비행기 그림자, 높이가 다른 구름, 선회할 때 기울어지는 기체, 비행운과 폭발 효과.</li>
+				</ul>
+
+				<h2>조작 방법</h2>
+				<ul>
+					<li><kbd>←</kbd><kbd>→</kbd> 또는 <kbd>A</kbd><kbd>D</kbd>: 선회</li>
+					<li><kbd>↑</kbd><kbd>↓</kbd> 또는 <kbd>W</kbd><kbd>S</kbd>: 속도 조절</li>
+					<li><kbd>Space</kbd>: 발사</li>
+					<li><kbd>Esc</kbd>: 메뉴로 나가기</li>
+				</ul>
+
+				<h2>게임 규칙</h2>
+				<ul>
+					<li>체력은 4칸이며, 총알을 4번 맞으면 격추됩니다.</li>
+					<li>상대를 격추하면 점수가 1점 오르고, 점수판에서 순위를 확인할 수 있습니다.</li>
+					<li>격추되면 2초 뒤 다시 출격하고, 출격 직후 3초 동안은 보호막으로 피해를 받지 않습니다.</li>
+					<li>화면 끝을 넘어가면 반대편에서 다시 나타납니다.</li>
+				</ul>
+
+				<h2>자주 묻는 질문</h2>
+				<h3>Sky Duel은 무료인가요?</h3>
+				<p>네. Sky Duel은 무료이며 회원가입 없이 닉네임만 정하면 바로 플레이할 수 있습니다.</p>
+				<h3>게임을 설치해야 하나요?</h3>
+				<p>아니요. 크롬, 엣지, 파이어폭스 같은 최신 데스크톱 브라우저에서 링크를 열면 바로 실행됩니다. 처음 접속할 때 약 40MB의 게임 엔진 파일을 내려받습니다.</p>
+				<h3>친구와 함께 플레이하려면 어떻게 하나요?</h3>
+				<p>시작 메뉴에서 친구와 같은 방 이름을 입력하고 출격하면 같은 하늘에서 실시간으로 대결합니다. 위치와 총알은 Supabase Realtime으로 동기화됩니다.</p>
+				<h3>혼자서도 할 수 있나요?</h3>
+				<p>네. 시작 메뉴에서 AI 적기를 0~8대, 난이도를 쉬움·보통·어려움 중에서 고를 수 있습니다. 여럿이 함께할 때는 방장 한 명의 AI 설정을 따릅니다.</p>
+				<h3>조작 방법은 무엇인가요?</h3>
+				<p>방향키 ←→ 또는 A·D로 선회, ↑↓ 또는 W·S로 속도 조절, 스페이스바로 발사, Esc로 메뉴로 나갑니다.</p>
+				<h3>휴대폰에서도 할 수 있나요?</h3>
+				<p>지금은 키보드 조작만 지원해서 데스크톱이나 노트북 브라우저에서 플레이하는 것을 권장합니다.</p>
+
+				<h2>만든 방법</h2>
+				<p>Godot 4.7 엔진으로 만들어 웹으로 내보냈고, 멀티플레이 동기화는 Supabase Realtime(Broadcast·Presence), 호스팅은 Vercel을 사용합니다.</p>
+
+				<footer>
+					<p>소스 코드: <a href="https://github.com/HyunwooSeo-ai/godot_test_game" rel="noopener">GitHub - HyunwooSeo-ai/godot_test_game</a></p>
+					<p>글꼴: 나눔고딕 (SIL Open Font License 1.1)</p>
+				</footer>
+			</article>
+		</main>
+
+		<script>
+(function () {
+	// 엔진이 시작하며 문서 제목을 프로젝트 이름("Sky Duel")으로 바꾸므로, 검색용 제목으로 계속 되돌립니다.
+	const seoTitle = document.title;
+	new MutationObserver(function () {
+		if (document.title !== seoTitle) {
+			document.title = seoTitle;
+		}
+	}).observe(document.head, { childList: true, subtree: true, characterData: true });
+
+	// 소개 패널을 닫으면 게임 캔버스로 키보드 포커스를 돌려줍니다.
+	const toggle = document.getElementById('info-toggle');
+	const about = document.getElementById('about');
+	toggle.addEventListener('click', function () {
+		const open = about.hidden;
+		about.hidden = !open;
+		toggle.setAttribute('aria-expanded', String(open));
+		toggle.textContent = open ? '게임으로 돌아가기' : '게임 정보';
+		if (!open) {
+			document.getElementById('canvas').focus();
+		}
+	});
+}());
+		</script>
+
+		<script src="$GODOT_URL"></script>
+		<script>
+const GODOT_CONFIG = $GODOT_CONFIG;
+const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
+const engine = new Engine(GODOT_CONFIG);
+
+(function () {
+	const statusOverlay = document.getElementById('status');
+	const statusProgress = document.getElementById('status-progress');
+	const statusNotice = document.getElementById('status-notice');
+
+	let initializing = true;
+	let statusMode = '';
+
+	function setStatusMode(mode) {
+		if (statusMode === mode || !initializing) {
+			return;
+		}
+		if (mode === 'hidden') {
+			statusOverlay.remove();
+			initializing = false;
+			return;
+		}
+		statusOverlay.style.visibility = 'visible';
+		statusProgress.style.display = mode === 'progress' ? 'block' : 'none';
+		statusNotice.style.display = mode === 'notice' ? 'block' : 'none';
+		statusMode = mode;
+	}
+
+	function setStatusNotice(text) {
+		while (statusNotice.lastChild) {
+			statusNotice.removeChild(statusNotice.lastChild);
+		}
+		const lines = text.split('\n');
+		lines.forEach((line) => {
+			statusNotice.appendChild(document.createTextNode(line));
+			statusNotice.appendChild(document.createElement('br'));
+		});
+	}
+
+	function displayFailureNotice(err) {
+		console.error(err);
+		if (err instanceof Error) {
+			setStatusNotice(err.message);
+		} else if (typeof err === 'string') {
+			setStatusNotice(err);
+		} else {
+			setStatusNotice('An unknown error occurred.');
+		}
+		setStatusMode('notice');
+		initializing = false;
+	}
+
+	const missing = Engine.getMissingFeatures({
+		threads: GODOT_THREADS_ENABLED,
+	});
+
+	if (missing.length !== 0) {
+		if (GODOT_CONFIG['serviceWorker'] && GODOT_CONFIG['ensureCrossOriginIsolationHeaders'] && 'serviceWorker' in navigator) {
+			let serviceWorkerRegistrationPromise;
+			try {
+				serviceWorkerRegistrationPromise = navigator.serviceWorker.getRegistration();
+			} catch (err) {
+				serviceWorkerRegistrationPromise = Promise.reject(new Error('Service worker registration failed.'));
+			}
+			// There's a chance that installing the service worker would fix the issue
+			Promise.race([
+				serviceWorkerRegistrationPromise.then((registration) => {
+					if (registration != null) {
+						return Promise.reject(new Error('Service worker already exists.'));
+					}
+					return registration;
+				}).then(() => engine.installServiceWorker()),
+				// For some reason, `getRegistration()` can stall
+				new Promise((resolve) => {
+					setTimeout(() => resolve(), 2000);
+				}),
+			]).then(() => {
+				// Reload if there was no error.
+				window.location.reload();
+			}).catch((err) => {
+				console.error('Error while registering service worker:', err);
+			});
+		} else {
+			// Display the message as usual
+			const missingMsg = 'Error\nThe following features required to run Godot projects on the Web are missing:\n';
+			displayFailureNotice(missingMsg + missing.join('\n'));
+		}
+	} else {
+		setStatusMode('progress');
+		engine.startGame({
+			'onProgress': function (current, total) {
+				if (current > 0 && total > 0) {
+					statusProgress.value = current;
+					statusProgress.max = total;
+				} else {
+					statusProgress.removeAttribute('value');
+					statusProgress.removeAttribute('max');
+				}
+			},
+		}).then(() => {
+			setStatusMode('hidden');
+		}, displayFailureNotice);
+	}
+}());
+		</script>
+	</body>
+</html>

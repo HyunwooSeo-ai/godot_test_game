@@ -10,7 +10,6 @@ const RealtimeClient = preload("res://realtime_client.gd")
 const SUPABASE_URL := "https://dyfieegfgskszpyldhzs.supabase.co"
 const SUPABASE_KEY := "sb_publishable_6CYWcAoFrPU3LZ3MmoKgPA_uOfs8_MP"
 const CHANNEL_PREFIX := "skyduel-"
-
 const ARENA := Vector2(1280, 720)
 const TURN_SPEED := 2.5
 const MIN_SPEED := 100.0
