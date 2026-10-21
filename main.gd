@@ -20,11 +20,11 @@ const ACCEL := 150.0
 const BULLET_SPEED := 480.0
 const BULLET_LIFE := 1.4
 const FIRE_COOLDOWN := 0.25
-const MAX_HP := 4
-const HIT_RADIUS := 19.0
+const MAX_HP := 3
+const HIT_RADIUS := 25.0       # 기체 반경보다 조금 넉넉하게 잡아 스치는 총알도 맞게 합니다
 const RESPAWN_SEC := 2.0
 const SHIELD_SEC := 3.0
-const WIN_SCORE := 10          # 이만큼 먼저 격추하면 그 판 승리
+const WIN_SCORE := 5           # 이만큼 먼저 격추하면 그 판 승리
 const ROUND_BREAK := 5.0       # 승리 발표 후 새 판까지
 const ROUND_COOLDOWN := 2.0    # 새 판 직후 늦게 도착한 옛 점수로 다시 끝나지 않게 기다리는 시간
 const SEND_HZ := 10.0
@@ -78,6 +78,7 @@ var fire_cd := 0.0
 var send_left := 0.0
 var bullet_seq := 0
 var bank := 0.0              # 선회할 때 기울어진 정도(-1~1). 그리기에만 씁니다.
+var turn_rate := 0.0         # 지금 선회 속도(rad/s). state에 실어 보내 받는 쪽이 곡선으로 예측하게 합니다.
 
 var bullets: Array = []      # { bid, owner, pos, vel, life }
 var own_shots: Dictionary = {}  # 나와 내 AI가 쏜 bid -> 쏜 시각. hit가 오면 지워서 한 발이 한 번만 점수가 되게 합니다.
@@ -102,6 +103,7 @@ var trails: Dictionary = {}  # 비행기 id -> [[왼쪽 날개 끝, 오른쪽 �
 var trail_left := 0.0
 var smoke_left := 0.0
 var hud_box: StyleBoxFlat
+var glint_layer: Node2D      # 물결 반짝임 층(매 프레임 다시 그림). 나머지 배경 층은 한 번만 그립니다.
 
 # 효과음 (코드로 합성)
 var sfx: Dictionary = {}     # 이름 -> AudioStreamWAV
@@ -138,6 +140,7 @@ func _ready() -> void:
 	randomize()
 	font = _make_font()
 	_build_scenery()
+	_build_layers()
 	_build_sfx()
 	_build_menu()
 	_apply_invite_from_url()
@@ -503,6 +506,10 @@ func _notification(what: int) -> void:
 
 func _process(delta: float) -> void:
 	elapsed += delta
+	if bot_mode and elapsed > 3.0:
+		# 끊김 점검용: 시작 3초 뒤부터 가장 긴 프레임과 프레임 수를 셉니다.
+		stats["frames"] = int(stats.get("frames", 0)) + 1
+		stats["worst_frame_ms"] = maxf(float(stats.get("worst_frame_ms", 0.0)), snappedf(delta * 1000.0, 0.1))
 	if quit_after > 0.0 and elapsed >= quit_after:
 		quit_after = 0.0
 		_finish_bot()
@@ -608,7 +615,8 @@ func _update_me(delta: float) -> void:
 			thrust -= 1.0
 		fire = Input.is_physical_key_pressed(KEY_SPACE)
 
-	angle = wrapf(angle + turn * TURN_SPEED * delta, -PI, PI)
+	turn_rate = turn * TURN_SPEED
+	angle = wrapf(angle + turn_rate * delta, -PI, PI)
 	bank = lerpf(bank, turn, minf(1.0, delta * 5.0))
 	speed = clampf(speed + thrust * ACCEL * delta, MIN_SPEED, MAX_SPEED)
 	pos = _wrap(pos + Vector2.RIGHT.rotated(angle) * speed * delta)
@@ -682,7 +690,7 @@ func _send_state() -> void:
 	_broadcast("state", {
 		"id": my_id, "name": my_name, "color": my_color.to_html(false),
 		"x": snappedf(pos.x, 0.1), "y": snappedf(pos.y, 0.1), "a": snappedf(angle, 0.001),
-		"v": snappedf(speed, 0.1), "hp": hp, "alive": alive, "score": score, "deaths": deaths,
+		"v": snappedf(speed, 0.1), "w": snappedf(turn_rate, 0.01), "hp": hp, "alive": alive, "score": score, "deaths": deaths,
 	})
 
 
@@ -749,6 +757,8 @@ func _upsert_peer(id: String, p: Dictionary) -> bool:
 	var peer: Dictionary
 	if peers.has(id):
 		peer = peers[id]
+		if bot_mode and now_alive and bool(peer["alive"]):
+			_record_prediction(peer, target)
 		if now_alive and not bool(peer["alive"]):
 			peer["pos"] = target
 			peer["angle"] = a
@@ -763,13 +773,27 @@ func _upsert_peer(id: String, p: Dictionary) -> bool:
 	peer["name"] = nick if nick != "" else "?"
 	peer["color"] = Color.from_string(str(p.get("color", "ffffff")).left(8), Color.WHITE)
 	peer["target"] = target
+	peer["lin_target"] = target
 	peer["target_angle"] = a
+	peer["lin_angle"] = a
 	peer["speed"] = _num(p.get("v"), START_SPEED, MIN_SPEED, MAX_SPEED)
+	# 선회 속도가 없으면(예전 버전) 0으로 보고 직선으로 예측합니다.
+	peer["turn_rate"] = _num(p.get("w"), 0.0, -TURN_SPEED, TURN_SPEED)
 	peer["hp"] = int(_num(p.get("hp"), MAX_HP, 0, MAX_HP))
 	peer["alive"] = now_alive
 	peer["score"] = new_score
 	peer["last_seen"] = elapsed
 	return true
+
+
+func _record_prediction(peer: Dictionary, actual: Vector2) -> void:
+	# 봇 점검용: 새 state가 왔을 때 예측 위치가 얼마나 빗나갔는지(곡선 예측 vs 예전 직선 예측) 셉니다.
+	var n := int(stats.get("pred_n", 0)) + 1
+	stats["pred_n"] = n
+	for key in [["target", "pred_err"], ["lin_target", "lin_err"]]:
+		var err := _wrap_delta(peer[key[0]], actual).length()
+		stats[key[1]] = snappedf(float(stats.get(key[1], 0.0)) + (err - float(stats.get(key[1], 0.0))) / n, 0.01)
+		stats[key[1] + "_max"] = snappedf(maxf(float(stats.get(key[1] + "_max", 0.0)), err), 0.1)
 
 
 func _on_shot(p: Dictionary) -> void:
@@ -858,9 +882,13 @@ func _update_peers(delta: float) -> void:
 		if elapsed - float(peer["last_seen"]) > PEER_TIMEOUT:
 			peers.erase(id)
 			continue
-		# 다음 state가 올 때까지 마지막 속도로 예측하고, 화면 위치는 부드럽게 따라갑니다.
+		# 다음 state가 올 때까지 마지막 속도와 선회 속도로 곡선을 그리며 예측하고, 화면 위치는 부드럽게 따라갑니다.
+		# 선회 중에 직선으로만 예측하면 state가 올 때마다 바깥으로 튀었다가 돌아와 끊겨 보입니다.
 		if bool(peer["alive"]):
+			peer["target_angle"] = wrapf(float(peer["target_angle"]) + float(peer.get("turn_rate", 0.0)) * delta, -PI, PI)
 			peer["target"] = _wrap(peer["target"] + Vector2.RIGHT.rotated(float(peer["target_angle"])) * float(peer["speed"]) * delta)
+			if bot_mode:
+				peer["lin_target"] = _wrap(peer["lin_target"] + Vector2.RIGHT.rotated(float(peer["lin_angle"])) * float(peer["speed"]) * delta)
 		var diff := _wrap_delta(peer["pos"], peer["target"])
 		if diff.length() > 150.0:
 			peer["pos"] = peer["target"]
@@ -971,7 +999,8 @@ func _update_ai(delta: float) -> void:
 		if away != Vector2.ZERO:
 			turn = clampf(turn + clampf(wrapf(away.angle() - a, -PI, PI), -1.0, 1.0), -1.0, 1.0)
 
-		a = wrapf(a + turn * float(lv["turn"]) * delta, -PI, PI)
+		ai["w"] = turn * float(lv["turn"])
+		a = wrapf(a + float(ai["w"]) * delta, -PI, PI)
 		ai["bank"] = lerpf(float(ai["bank"]), turn, minf(1.0, delta * 5.0))
 		var v := clampf(float(ai["speed"]) + thrust * ACCEL * delta, MIN_SPEED, float(lv["speed"]))
 		ai["angle"] = a
@@ -1018,7 +1047,8 @@ func _send_ai() -> void:
 		list.append({
 			"id": id, "name": ai["name"], "color": (ai["color"] as Color).to_html(false),
 			"x": snappedf(p.x, 0.1), "y": snappedf(p.y, 0.1), "a": snappedf(float(ai["angle"]), 0.001),
-			"v": snappedf(float(ai["speed"]), 0.1), "hp": ai["hp"], "alive": ai["alive"], "score": ai["score"],
+			"v": snappedf(float(ai["speed"]), 0.1), "w": snappedf(float(ai.get("w", 0.0)), 0.01),
+			"hp": ai["hp"], "alive": ai["alive"], "score": ai["score"],
 		})
 	_broadcast("ai", {"owner": my_id, "level": ai_level, "list": list})
 
@@ -1223,6 +1253,10 @@ func _update_scenery(delta: float) -> void:
 		if p.x > ARENA.x + 120.0:
 			p.x = -120.0
 		c["pos"] = p
+		if c.has("node"):
+			(c["node"] as Node2D).position = p
+	if glint_layer:
+		glint_layer.queue_redraw()
 
 
 func _visible_planes() -> Array:
@@ -1398,10 +1432,7 @@ func _update_particles(delta: float) -> void:
 # ---------------------------------------------------------------- 그리기
 
 func _draw() -> void:
-	_draw_sea()
-	for c in clouds:
-		if not bool(c["high"]):
-			_draw_cloud(c, false)
+	# 바다·섬·낮은 구름은 _build_layers의 자식 노드가 그립니다.
 
 	var planes := _visible_planes() if mode == Mode.PLAYING else []
 	for pl in planes:
@@ -1432,7 +1463,7 @@ func _draw() -> void:
 	# 높은 구름은 비행기 위를 지나가며 살짝 가립니다.
 	for c in clouds:
 		if bool(c["high"]):
-			_draw_cloud(c, true)
+			_draw_cloud(self, c["pos"], c, true)
 	if not demo_mode:
 		_draw_vignette()
 
@@ -1463,40 +1494,72 @@ func _draw() -> void:
 			_draw_hud()
 
 
-func _draw_sea() -> void:
-	draw_polygon(
+# 바다·섬·구름은 원을 수백 개 그려야 해서 매 프레임 다시 그리면 웹에서 프레임이 밀립니다.
+# 그래서 main 아래 z_index -1 자식 노드에 한 번만 그려 두고(CanvasItem은 queue_redraw 전까지 그린 것을 재사용),
+# 구름은 노드 위치만 옮깁니다. 같은 z에서는 노드 순서대로 그려지므로 바다 → 물결 → 섬 → 낮은 구름 순서입니다.
+func _build_layers() -> void:
+	_add_layer(_draw_sea_base)
+	glint_layer = _add_layer(_draw_glints)
+	_add_layer(_draw_islands)
+	for c in clouds:
+		if not bool(c["high"]):
+			var n := Node2D.new()
+			n.z_index = -1
+			n.position = c["pos"]
+			n.draw.connect(_draw_cloud.bind(n, Vector2.ZERO, c, false))
+			add_child(n)
+			c["node"] = n
+
+
+func _add_layer(draw_fn: Callable) -> Node2D:
+	var n := Node2D.new()
+	n.z_index = -1
+	n.draw.connect(draw_fn.bind(n))
+	add_child(n)
+	return n
+
+
+func _draw_sea_base(ci: CanvasItem) -> void:
+	ci.draw_polygon(
 		PackedVector2Array([Vector2.ZERO, Vector2(ARENA.x, 0), ARENA, Vector2(0, ARENA.y)]),
 		PackedColorArray([SEA_TOP, SEA_TOP.lerp(SEA_BOTTOM, 0.3), SEA_BOTTOM, SEA_BOTTOM.lerp(SEA_TOP, 0.2)]))
+
+
+func _draw_glints(ci: CanvasItem) -> void:
+	# 물결 반짝임만 움직이므로 이 층만 매 프레임 다시 그립니다.
 	for g in glints:
 		var a := 0.05 + 0.1 * (0.5 + 0.5 * sin(elapsed * 1.6 + g.z))
 		var x := fposmod(g.x + elapsed * 5.0, ARENA.x)
-		draw_line(Vector2(x - 6, g.y), Vector2(x + 6, g.y), Color(1, 1, 1, a), 1.5)
+		ci.draw_line(Vector2(x - 6, g.y), Vector2(x + 6, g.y), Color(1, 1, 1, a), 1.5)
+
+
+func _draw_islands(ci: CanvasItem) -> void:
 	# 섬: 얕은 바다 → 모래 → 숲 → 볕 드는 쪽 순서로 겹쳐 그립니다.
 	for isl in islands:
 		var c: Vector2 = isl["pos"]
 		for bl in isl["blobs"]:
-			draw_circle(c + Vector2(bl.x, bl.y), bl.z + 24, Color(0.4, 0.75, 0.78, 0.3))
+			ci.draw_circle(c + Vector2(bl.x, bl.y), bl.z + 24, Color(0.4, 0.75, 0.78, 0.3))
 		for bl in isl["blobs"]:
-			draw_circle(c + Vector2(bl.x, bl.y), bl.z + 7, Color(0.86, 0.8, 0.6))
+			ci.draw_circle(c + Vector2(bl.x, bl.y), bl.z + 7, Color(0.86, 0.8, 0.6))
 		for bl in isl["blobs"]:
-			draw_circle(c + Vector2(bl.x, bl.y), bl.z, Color(0.25, 0.5, 0.3))
+			ci.draw_circle(c + Vector2(bl.x, bl.y), bl.z, Color(0.25, 0.5, 0.3))
 		for bl in isl["blobs"]:
-			draw_circle(c + Vector2(bl.x - bl.z * 0.25, bl.y - bl.z * 0.3), bl.z * 0.55, Color(0.34, 0.6, 0.35))
+			ci.draw_circle(c + Vector2(bl.x - bl.z * 0.25, bl.y - bl.z * 0.3), bl.z * 0.55, Color(0.34, 0.6, 0.35))
 
 
-func _draw_cloud(c: Dictionary, high: bool) -> void:
-	var p: Vector2 = c["pos"]
+func _draw_cloud(ci: CanvasItem, p: Vector2, c: Dictionary, high: bool) -> void:
+	# p는 ci 기준 구름 중심입니다. 낮은 구름은 자기 노드 원점(0, 0), 높은 구름은 main 기준 위치를 받습니다.
 	if not high:
 		for pf in c["puffs"]:
-			draw_circle(p + Vector2(pf.x, pf.y) + Vector2(40, 52), pf.z, Color(0, 0.05, 0.1, 0.12))
+			ci.draw_circle(p + Vector2(pf.x, pf.y) + Vector2(40, 52), pf.z, Color(0, 0.05, 0.1, 0.12))
 	var alpha := 0.2 if high else 0.75
 	# 바깥쪽에 옅은 테두리를 한 겹 더 그려 구름 가장자리를 부드럽게 합니다.
 	for pf in c["puffs"]:
-		draw_circle(p + Vector2(pf.x, pf.y), pf.z * 1.18, Color(0.84, 0.89, 0.95, alpha * 0.3))
+		ci.draw_circle(p + Vector2(pf.x, pf.y), pf.z * 1.18, Color(0.84, 0.89, 0.95, alpha * 0.3))
 	for pf in c["puffs"]:
-		draw_circle(p + Vector2(pf.x, pf.y), pf.z, Color(0.84, 0.89, 0.95, alpha * 0.8))
+		ci.draw_circle(p + Vector2(pf.x, pf.y), pf.z, Color(0.84, 0.89, 0.95, alpha * 0.8))
 	for pf in c["puffs"]:
-		draw_circle(p + Vector2(pf.x - pf.z * 0.2, pf.y - pf.z * 0.25), pf.z * 0.7, Color(1, 1, 1, alpha * 0.8))
+		ci.draw_circle(p + Vector2(pf.x - pf.z * 0.2, pf.y - pf.z * 0.25), pf.z * 0.7, Color(1, 1, 1, alpha * 0.8))
 
 
 func _draw_vignette() -> void:

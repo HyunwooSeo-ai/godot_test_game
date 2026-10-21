@@ -31,7 +31,7 @@ Godot은 설치 프로그램 없이 `%USERPROFILE%\Apps\Godot`에 풀어 둔 실
 | `--ai=N --level=0~2` | 봇이 방장일 때 띄울 AI 수와 난이도입니다(기본 3대, 보통). 봇은 메뉴 설정 파일을 쓰지 않습니다. |
 | `--screenshot=경로` | 종료 직전 게임 화면을 PNG로 저장합니다. 창 모드에서만 의미가 있습니다. |
 
-검증할 때는 같은 `--room`으로 `--headless` 봇 두 개를 동시에 띄워 `RESULT`의 `states`, `hits_given`/`hits_taken`, `kills`, `ai_owned`/`ai_seen`을 비교합니다. 혼자 들어간 봇은 `ai_owned: 3`이 나와야 합니다. 화면 확인은 OS 화면 캡처 대신 `--screenshot`을 씁니다. OS 캡처는 다른 창이 찍힐 수 있습니다.
+검증할 때는 같은 `--room`으로 `--headless` 봇 두 개를 동시에 띄워 `RESULT`의 `states`, `hits_given`/`hits_taken`, `kills`, `ai_owned`/`ai_seen`을 비교합니다. 혼자 들어간 봇은 `ai_owned: 3`이 나와야 합니다. 화면 확인은 OS 화면 캡처 대신 `--screenshot`을 씁니다. OS 캡처는 다른 창이 찍힐 수 있습니다. 끊김 점검에는 `RESULT`의 `pred_err`/`lin_err`(새 state가 왔을 때 곡선 예측·직선 예측이 빗나간 평균 px, `_max`는 최대)와 `worst_frame_ms`(시작 3초 뒤 가장 긴 프레임, 창 모드에서만 의미 있음)를 봅니다.
 
 ## 웹 빌드와 배포 (Vercel)
 
@@ -60,7 +60,8 @@ powershell -ExecutionPolicy Bypass -File tools/serve-web.ps1
 
 ### 판 진행과 조작 보조
 
-- `WIN_SCORE`(10)를 먼저 채우면 그 판 승리입니다(`_update_round`). 서버가 없으므로 모든 클라이언트가 같은 점수판(`_board()`)을 보고 각자 승리를 발표하고, `ROUND_BREAK`(5초) 뒤 각자 자기 점수를(방장은 AI 점수도) 0으로 돌립니다. 새 판 직후 `ROUND_COOLDOWN`(2초)은 늦게 도착한 옛 점수로 다시 끝나지 않도록 판정을 쉽니다. 발표 중에는 발사가 막힙니다. 봇은 `--win=N`으로 목표를 바꿔 빠르게 시험합니다.
+- 체력은 `MAX_HP`(3), 피격 판정 반경은 `HIT_RADIUS`(25px)입니다. "격추가 어렵다"는 피드백으로 2026-10-21에 4·19px에서 낮췄습니다.
+- `WIN_SCORE`(5)를 먼저 채우면 그 판 승리입니다(`_update_round`). 서버가 없으므로 모든 클라이언트가 같은 점수판(`_board()`)을 보고 각자 승리를 발표하고, `ROUND_BREAK`(5초) 뒤 각자 자기 점수를(방장은 AI 점수도) 0으로 돌립니다. 새 판 직후 `ROUND_COOLDOWN`(2초)은 늦게 도착한 옛 점수로 다시 끝나지 않도록 판정을 쉽니다. 발표 중에는 발사가 막힙니다. 봇은 `--win=N`으로 목표를 바꿔 빠르게 시험합니다.
 - 이름표는 겹치면 17px씩 위로 밀리고(최대 4줄) 기체와 가는 선으로 이어집니다. 내 이름표가 먼저 자리를 잡습니다.
 - Esc는 2초 안에 두 번 눌러야 메뉴로 나갑니다(`esc_armed_left`).
 - `web/.gdignore`는 Godot가 `web/` 안의 파일을 리소스로 가져오지 않게 합니다. 지우면 `.import` 파일이 생기고 pck에도 섞입니다.
@@ -97,13 +98,14 @@ powershell -ExecutionPolicy Bypass -File tools/avi-to-mp4.ps1 -Src promo/output/
 - `realtime_client.gd`: Godot용 Supabase SDK가 없어서 `WebSocketPeer`로 Phoenix 채널 프로토콜(`vsn=1.0.0`)을 직접 구현했습니다. 참가(`phx_join`), 25초 heartbeat, `broadcast` 송수신, presence `track`/`presence_state`/`presence_diff`만 다룹니다. 다시 track하면 같은 키가 joins와 leaves에 함께 오므로 joins에 없는 키만 퇴장으로 처리합니다.
 - 스크립트끼리는 `class_name` 대신 `preload`로 참조합니다(`const RealtimeClient = preload(...)`). 편집기로 한 번도 import하지 않은 상태에서 헤드리스로 바로 실행해도 깨지지 않게 하려는 것입니다.
 - 화면은 위에서 내려다보는 2D지만 `main.gd`의 "연출" 섹션이 입체감을 더합니다: 비행기 그림자(`SHADOW_OFFSET`), 아래·위 두 층 구름, 선회 기울기(`bank`)에 따른 날개 음영, 비행운, 연기·폭발 파티클. 이 값들은 네트워크로 보내지 않고 각자 계산합니다(남의 기울기는 각도 변화로 추정). 지형은 고정 시드라 모두에게 같게 보입니다.
+- 바다·섬·낮은 구름은 `_build_layers`가 만든 `z_index -1` 자식 노드에 한 번만 그리고, 구름은 노드 위치만 옮깁니다(물결 층만 매 프레임 다시 그림). 매 프레임 `_draw()`에서 그리던 때는 그리기가 프레임당 약 6ms(PC 기준)였고 웹에서 끊겼습니다. 원을 많이 그리는 정적 요소를 `_draw()`에 다시 넣지 않습니다.
 - 한글 글꼴은 포함한 나눔고딕을 메뉴 Theme과 `draw_string`에 함께 쓰고, 불러오지 못하면 `SystemFont`(맑은 고딕)로 대신합니다.
 
 ### 네트워크 권한 모델
 
 권한 서버가 없으므로 상태마다 주인이 정해져 있습니다.
 
-- 각 클라이언트는 자기 비행기와 자기 총알만 직접 움직입니다. 남의 비행기는 `state`를 받아 보간하고 다음 state까지 마지막 속도로 예측합니다(`_update_peers`).
+- 각 클라이언트는 자기 비행기와 자기 총알만 직접 움직입니다. 남의 비행기는 `state`를 받아 보간하고 다음 state까지 마지막 속도와 선회 속도(`w`)로 곡선을 그리며 예측합니다(`_update_peers`). `w`가 없는 예전 클라이언트는 직선으로 예측합니다.
 - 총알은 `shot` 이벤트(시작 위치·각도)로 알리고, 받는 쪽이 같은 궤적을 직접 시뮬레이션합니다.
 - 피격 판정은 맞은 쪽이 합니다. 맞은 쪽이 `hit`를 보내고, 격추면 쏜 쪽이 그 메시지를 받고 자기 점수를 올립니다. Broadcast는 `self: false`라 자기가 보낸 이벤트는 돌아오지 않습니다. 그래서 자기가 판정한 피격의 처리는 로컬에서 따로 합니다.
 
@@ -111,7 +113,7 @@ powershell -ExecutionPolicy Bypass -File tools/avi-to-mp4.ps1 -Src promo/output/
 
 | 이벤트 | 보내는 쪽 | 내용 |
 | --- | --- | --- |
-| `state` | 각 플레이어, `SEND_HZ`(10Hz) | 위치, 각도, 속도, 체력, 생존, 점수 |
+| `state` | 각 플레이어, `SEND_HZ`(10Hz) | 위치, 각도, 속도, 선회 속도(`w`), 체력, 생존, 점수 |
 | `shot` | 총을 쏜 쪽(플레이어 또는 AI 주인) | 총알 id, 시작 위치, 각도 |
 | `hit` | 맞은 쪽(AI는 그 주인) | 피해자, 쏜 쪽, 총알 id, 남은 체력, 격추 여부 |
 | `ai` | 방장, 10Hz | 방장이 가진 AI 전체 상태 목록 하나 |
