@@ -59,7 +59,7 @@ powershell -ExecutionPolicy Bypass -File tools/serve-web.ps1
 - FAQ는 JSON-LD와 본문 두 곳에 같은 내용으로 있습니다. 게임 규칙(체력, 속도, AI 설정 등)을 바꾸면 두 곳과 `web/llms.txt`를 함께 고칩니다.
 - 엔진이 시작하면서 문서 제목을 프로젝트 이름으로 바꾸기 때문에, 셸의 스크립트가 `MutationObserver`로 검색용 `<title>`을 되돌립니다. `project.godot`의 `config/name`은 바꾸지 않습니다(`user://` 저장 위치가 바뀝니다).
 - `web/`에 직접 둔 정적 파일: `robots.txt`(AI 크롤러 포함 전체 허용), `sitemap.xml`, `llms.txt`, `og-image.png`(1200×630). 내보내기는 `index.*`만 덮어쓰므로 지워지지 않습니다. 날짜가 바뀌는 큰 변경이면 `sitemap.xml`의 `lastmod`를 갱신합니다.
-- `web/googlea4d164898e2b8dbd.html`은 Google Search Console 소유권 확인 파일입니다(URL 접두어 속성 `https://godottestgame.vercel.app/`, 사이트맵 제출 완료). 지우면 소유권 확인이 풀립니다.
+- `web/googlea4d164898e2b8dbd.html`은 Google Search Console 소유권 확인 파일입니다(URL 접두어 속성 `https://godottestgame.vercel.app/`, 사이트맵 제출 완료). 지우면 소유권 확인이 풀립니다. 네이버 서치어드바이저 확인은 `web_shell.html`의 `naver-site-verification` 메타 태그입니다.
 
 ## 구조
 
