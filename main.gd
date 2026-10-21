@@ -10,6 +10,7 @@ const RealtimeClient = preload("res://realtime_client.gd")
 const SUPABASE_URL := "https://dyfieegfgskszpyldhzs.supabase.co"
 const SUPABASE_KEY := "sb_publishable_6CYWcAoFrPU3LZ3MmoKgPA_uOfs8_MP"
 const CHANNEL_PREFIX := "skyduel-"
+const SITE_URL := "https://godottestgame.vercel.app/"  # PC 버전에서 초대 링크를 만들 때 씁니다
 const ARENA := Vector2(1280, 720)
 const TURN_SPEED := 2.5
 const MIN_SPEED := 100.0
@@ -89,6 +90,13 @@ var trail_left := 0.0
 var smoke_left := 0.0
 var hud_box: StyleBoxFlat
 
+# 효과음 (코드로 합성)
+var sfx: Dictionary = {}     # 이름 -> AudioStreamWAV
+var sfx_players: Array = []  # AudioStreamPlayer 풀
+var sfx_next := 0
+var sfx_seed := 777
+var muted := false
+
 var font: Font
 var menu_root: Control
 var name_edit: LineEdit
@@ -112,7 +120,9 @@ func _ready() -> void:
 	randomize()
 	font = _make_font()
 	_build_scenery()
+	_build_sfx()
 	_build_menu()
+	_apply_invite_from_url()
 	var args := _parse_args()
 	_args = args
 	quit_after = float(args.get("quit-after", "0"))
@@ -240,6 +250,21 @@ func _build_menu() -> void:
 	room_edit.text_submitted.connect(func(_t: String) -> void: _on_join_pressed())
 	box.add_child(room_edit)
 
+	var invite_button := Button.new()
+	invite_button.text = "초대 링크 복사"
+	invite_button.custom_minimum_size = Vector2(0, 36)
+	invite_button.add_theme_font_size_override("font_size", 16)
+	var flat := _box(Color(1, 1, 1, 0.07), 10, Color(1, 1, 1, 0.18))
+	invite_button.add_theme_stylebox_override("normal", flat)
+	invite_button.add_theme_stylebox_override("hover", _box(Color(1, 1, 1, 0.14), 10, Color(1, 0.7, 0.35)))
+	invite_button.add_theme_stylebox_override("pressed", flat)
+	for key in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+		invite_button.add_theme_color_override(key, Color(0.85, 0.92, 1.0))
+	invite_button.pressed.connect(func() -> void:
+		var url := _copy_invite(_clean_room(room_edit.text))
+		status_label.text = "초대 링크를 복사했어요. 친구에게 보내 주세요!\n" + url)
+	box.add_child(invite_button)
+
 	# AI 적기 설정. 여럿이 할 때는 방장(접속자 id가 가장 작은 사람)의 설정만 쓰입니다.
 	var ai_row := HBoxContainer.new()
 	ai_row.add_theme_constant_override("separation", 10)
@@ -270,7 +295,7 @@ func _build_menu() -> void:
 	status_label = _label("", 16, Color(1.0, 0.75, 0.4))
 	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(status_label)
-	box.add_child(_label("←→ / A D 회전   ↑↓ / W S 속도\nSpace 발사   Esc 나가기", 15, Color(0.75, 0.75, 0.8)))
+	box.add_child(_label("←→ / A D 회전   ↑↓ / W S 속도\nSpace 발사   L 초대 링크   M 소리   Esc 나가기", 15, Color(0.75, 0.75, 0.8)))
 	_load_settings()
 
 
@@ -281,6 +306,8 @@ func _load_settings() -> void:
 		room_edit.text = str(cfg.get_value("menu", "room", room_edit.text))
 		ai_count = clampi(int(cfg.get_value("menu", "ai_count", ai_count)), 0, AI_MAX_COUNT)
 		ai_level = clampi(int(cfg.get_value("menu", "ai_level", ai_level)), 0, AI_LEVELS.size() - 1)
+		muted = bool(cfg.get_value("menu", "muted", false))
+		AudioServer.set_bus_mute(0, muted)
 	ai_count_spin.value = ai_count
 	ai_level_option.select(ai_level)
 
@@ -291,7 +318,40 @@ func _save_settings() -> void:
 	cfg.set_value("menu", "room", room_edit.text)
 	cfg.set_value("menu", "ai_count", ai_count)
 	cfg.set_value("menu", "ai_level", ai_level)
+	cfg.set_value("menu", "muted", muted)
 	cfg.save(SETTINGS_PATH)
+
+
+# ---------------------------------------------------------------- 초대 링크
+# https://godottestgame.vercel.app/?room=방이름 으로 들어오면 방 이름을 채워 둡니다(출격은 사용자가 누름).
+
+func _clean_room(text: String) -> String:
+	var regex := RegEx.create_from_string("[^a-z0-9_-]")
+	var r := regex.sub(text.strip_edges().to_lower(), "", true)
+	return r if not r.is_empty() else "lobby"
+
+
+func _invite_url(room_name: String) -> String:
+	var base := SITE_URL
+	if OS.has_feature("web"):
+		base = str(JavaScriptBridge.eval("location.origin + location.pathname", true))
+	return base + "?room=" + room_name.uri_encode()
+
+
+func _copy_invite(room_name: String) -> String:
+	var url := _invite_url(room_name)
+	DisplayServer.clipboard_set(url)
+	return url
+
+
+func _apply_invite_from_url() -> void:
+	if not OS.has_feature("web"):
+		return
+	var q := str(JavaScriptBridge.eval("new URLSearchParams(location.search).get('room') || ''", true))
+	if q.strip_edges().is_empty():
+		return
+	room_edit.text = _clean_room(q)
+	status_label.text = "친구가 초대한 방 '%s'이에요. 닉네임을 확인하고 출격하세요!" % room_edit.text
 
 
 func _label(text: String, size: int, color := Color.WHITE) -> Label:
@@ -309,12 +369,10 @@ func _on_join_pressed() -> void:
 	var nick := name_edit.text.strip_edges()
 	if nick.is_empty():
 		nick = "Pilot"
-	var regex := RegEx.create_from_string("[^a-z0-9_-]")
-	var r := regex.sub(room_edit.text.strip_edges().to_lower(), "", true)
 	ai_count = int(ai_count_spin.value)
 	ai_level = maxi(0, ai_level_option.selected)
 	_save_settings()
-	_start(nick, r if not r.is_empty() else "lobby")
+	_start(nick, _clean_room(room_edit.text))
 
 
 # ---------------------------------------------------------------- 접속
@@ -385,6 +443,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_ESCAPE and mode == Mode.PLAYING:
 			_leave()
+		elif event.physical_keycode == KEY_M and mode == Mode.PLAYING:
+			_toggle_mute()
+		elif event.physical_keycode == KEY_L and mode == Mode.PLAYING:
+			_copy_invite(room)
+			_add_feed("초대 링크를 복사했어요. 친구에게 보내 주세요! (L)")
 
 
 func _notification(what: int) -> void:
@@ -426,6 +489,7 @@ func _spawn() -> void:
 	alive = true
 	shield = SHIELD_SEC
 	_send_state()
+	_play_sfx("spawn", pos, -6.0)
 
 
 func _update_me(delta: float) -> void:
@@ -474,6 +538,7 @@ func _fire() -> void:
 
 
 func _add_bullet(bid: String, owner: String, start: Vector2, a: float) -> void:
+	_play_sfx("shot", start, -8.0 if owner == my_id else -14.0)
 	bullets.append({"bid": bid, "owner": owner, "pos": start, "vel": Vector2.RIGHT.rotated(a) * BULLET_SPEED, "life": BULLET_LIFE})
 
 
@@ -1055,13 +1120,82 @@ func _wing_scale(b: float) -> float:
 	return 1.0 - 0.4 * absf(b)
 
 
+# ---------------------------------------------------------------- 효과음
+# 외부 음원 없이 짧은 소리를 코드로 합성합니다. 나에게서 먼 곳의 소리는 작게 들립니다.
+
+const SFX_RATE := 22050
+
+
+func _build_sfx() -> void:
+	var phase := [0.0]
+	sfx["shot"] = _synth(0.1, func(x: float) -> float:
+		phase[0] += TAU * (320.0 + 900.0 * exp(-x * 45.0)) / SFX_RATE
+		return (sin(phase[0]) * 0.5 + _sfx_noise() * 0.18) * exp(-x * 38.0))
+	sfx["hit"] = _synth(0.14, func(x: float) -> float:
+		return _sfx_noise() * exp(-x * 30.0) * 0.45 + sin(TAU * 1500.0 * x) * exp(-x * 45.0) * 0.25)
+	var lp := [0.0]
+	sfx["boom"] = _synth(0.8, func(x: float) -> float:
+		lp[0] += (_sfx_noise() - lp[0]) * 0.12
+		return sin(TAU * 52.0 * x) * exp(-x * 5.0) * 0.7 + lp[0] * exp(-x * 6.0) * 1.6)
+	var ph2 := [0.0]
+	sfx["spawn"] = _synth(0.25, func(x: float) -> float:
+		ph2[0] += TAU * (500.0 + 2000.0 * x) / SFX_RATE
+		return sin(ph2[0]) * sin(PI * x / 0.25) * 0.28)
+	for i in 10:
+		var p := AudioStreamPlayer.new()
+		add_child(p)
+		sfx_players.append(p)
+
+
+func _synth(length: float, f: Callable) -> AudioStreamWAV:
+	var n := int(length * SFX_RATE)
+	var data := PackedByteArray()
+	data.resize(n * 2)
+	for k in n:
+		var v: float = f.call(float(k) / SFX_RATE)
+		data.encode_s16(k * 2, int(tanh(v) * 30000.0))
+	var wav := AudioStreamWAV.new()
+	wav.format = AudioStreamWAV.FORMAT_16_BITS
+	wav.mix_rate = SFX_RATE
+	wav.data = data
+	return wav
+
+
+func _sfx_noise() -> float:
+	sfx_seed = (sfx_seed * 1103515245 + 12345) & 0x7fffffff
+	return float(sfx_seed) / 1073741824.0 - 1.0
+
+
+func _play_sfx(sound: String, at: Vector2, base_db: float) -> void:
+	# 홍보 영상(자체 사운드가 있음)과 헤드리스 봇에서는 소리를 내지 않습니다.
+	if muted or demo_mode or bot_mode or mode != Mode.PLAYING:
+		return
+	var dist := _wrap_delta(pos, at).length()
+	var p: AudioStreamPlayer = sfx_players[sfx_next]
+	sfx_next = (sfx_next + 1) % sfx_players.size()
+	p.stream = sfx[sound]
+	p.volume_db = base_db - clampf(dist / 50.0, 0.0, 20.0)
+	p.pitch_scale = randf_range(0.94, 1.06)
+	p.play()
+
+
+func _toggle_mute() -> void:
+	muted = not muted
+	AudioServer.set_bus_mute(0, muted)
+	_save_settings()
+	if mode == Mode.PLAYING:
+		_add_feed("소리 끔 (M)" if muted else "소리 켬 (M)")
+
+
 func _spark(at: Vector2) -> void:
+	_play_sfx("hit", at, -6.0)
 	for i in 8:
 		var dir := Vector2.RIGHT.rotated(randf() * TAU)
 		particles.append({"pos": at, "vel": dir * randf_range(60, 160), "life": 0.35, "max": 0.35, "size": 2.5, "color": Color(1, 0.85, 0.4), "smoke": false})
 
 
 func _explode(at: Vector2, color: Color) -> void:
+	_play_sfx("boom", at, -1.0)
 	_add_effect(at, Color(1, 0.75, 0.35), 0.6, 70)
 	for i in 18:
 		var dir := Vector2.RIGHT.rotated(randf() * TAU)
@@ -1317,4 +1451,4 @@ func _draw_hud() -> void:
 	if not alive:
 		draw_style_box(hud_box, Rect2(ARENA.x / 2 - 240, ARENA.y / 2 - 42, 480, 64))
 		_text(Vector2(0, ARENA.y / 2), "격추되었습니다! %.1f초 뒤 다시 출격" % maxf(respawn_left, 0.0), 24, Color(1, 0.68, 0.55), HORIZONTAL_ALIGNMENT_CENTER, ARENA.x)
-	_text(Vector2(18, ARENA.y - 18), "←→ / A D 회전    ↑↓ / W S 속도    Space 발사    Esc 나가기", 14, Color(1, 1, 1, 0.7))
+	_text(Vector2(18, ARENA.y - 18), "←→ / A D 회전    ↑↓ / W S 속도    Space 발사    L 초대 링크    M 소리 %s    Esc 나가기" % ("꺼짐" if muted else "켜짐"), 14, Color(1, 1, 1, 0.7))

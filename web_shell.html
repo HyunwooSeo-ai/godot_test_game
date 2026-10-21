@@ -74,12 +74,12 @@
 				{
 					"@type": "Question",
 					"name": "게임을 설치해야 하나요?",
-					"acceptedAnswer": { "@type": "Answer", "text": "아니요. 크롬, 엣지, 파이어폭스 같은 최신 데스크톱 브라우저에서 링크를 열면 바로 실행됩니다. 처음 접속할 때 약 40MB의 게임 엔진 파일을 내려받습니다." }
+					"acceptedAnswer": { "@type": "Answer", "text": "아니요. 크롬, 엣지, 파이어폭스 같은 최신 데스크톱 브라우저에서 링크를 열면 바로 실행됩니다. 처음 접속할 때 약 10MB(압축 전송 기준)의 게임 엔진 파일을 내려받습니다." }
 				},
 				{
 					"@type": "Question",
 					"name": "친구와 함께 플레이하려면 어떻게 하나요?",
-					"acceptedAnswer": { "@type": "Answer", "text": "시작 메뉴에서 친구와 같은 방 이름을 입력하고 출격하면 같은 하늘에서 실시간으로 대결합니다. 위치와 총알은 Supabase Realtime으로 동기화됩니다." }
+					"acceptedAnswer": { "@type": "Answer", "text": "시작 메뉴의 '초대 링크 복사' 버튼(게임 중에는 L 키)으로 방 링크를 복사해 친구에게 보내면, 친구가 링크를 열 때 같은 방 이름이 자동으로 채워집니다. 같은 방 이름으로 출격하면 같은 하늘에서 실시간으로 대결하며, 위치와 총알은 Supabase Realtime으로 동기화됩니다." }
 				},
 				{
 					"@type": "Question",
@@ -89,12 +89,12 @@
 				{
 					"@type": "Question",
 					"name": "조작 방법은 무엇인가요?",
-					"acceptedAnswer": { "@type": "Answer", "text": "방향키 ←→ 또는 A·D로 선회, ↑↓ 또는 W·S로 속도 조절, 스페이스바로 발사, Esc로 메뉴로 나갑니다." }
+					"acceptedAnswer": { "@type": "Answer", "text": "방향키 ←→ 또는 A·D로 선회, ↑↓ 또는 W·S로 속도 조절, 스페이스바로 발사, L로 초대 링크 복사, M으로 소리 켜기·끄기, Esc로 메뉴로 나갑니다." }
 				},
 				{
 					"@type": "Question",
 					"name": "휴대폰에서도 할 수 있나요?",
-					"acceptedAnswer": { "@type": "Answer", "text": "지금은 키보드 조작만 지원해서 데스크톱이나 노트북 브라우저에서 플레이하는 것을 권장합니다." }
+					"acceptedAnswer": { "@type": "Answer", "text": "지금은 키보드 조작만 지원해서 데스크톱이나 노트북 브라우저에서 플레이해야 합니다. 휴대폰으로 열면 링크를 복사해 PC에서 열 수 있도록 안내 화면이 먼저 나옵니다." }
 				}
 			]
 		}
@@ -264,6 +264,71 @@ body {
 	font-size: 13px;
 }
 
+/* 휴대폰 안내: 키보드 게임이라 PC로 유도합니다. 엔진은 "그래도 열어 보기"를 누를 때만 받습니다. */
+#mobile-notice {
+	position: fixed;
+	inset: 0;
+	z-index: 30;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 24px;
+	background: radial-gradient(circle at 50% 30%, #12395a 0%, #04101e 70%);
+	color: #e6eefc;
+	font: 16px/1.6 system-ui, 'Malgun Gothic', sans-serif;
+	text-align: center;
+}
+
+#mobile-notice[hidden] {
+	display: none;
+}
+
+#mobile-notice .card {
+	max-width: 360px;
+}
+
+#mobile-notice h2 {
+	margin: 0 0 6px;
+	color: #ffe0a0;
+	font-size: 34px;
+	letter-spacing: 1px;
+}
+
+#mobile-notice strong {
+	display: block;
+	margin: 18px 0 8px;
+	color: #ffffff;
+	font-size: 19px;
+}
+
+#mobile-notice button {
+	display: block;
+	width: 100%;
+	margin-top: 12px;
+	padding: 14px;
+	border: 0;
+	border-radius: 999px;
+	font: 600 16px system-ui, 'Malgun Gothic', sans-serif;
+	cursor: pointer;
+}
+
+#mobile-copy {
+	background: #ff9438;
+	color: #1e0d00;
+}
+
+#mobile-continue {
+	background: rgba(255, 255, 255, 0.1);
+	color: #c9d6ea;
+}
+
+#mobile-copied {
+	min-height: 1.6em;
+	margin-top: 10px;
+	color: #8cc8ff;
+	font-size: 14px;
+}
+
 #about footer {
 	margin-top: 24px;
 	color: #9fb0c8;
@@ -287,6 +352,18 @@ body {
 			<div id="status-notice"></div>
 		</div>
 
+		<div id="mobile-notice" role="dialog" aria-labelledby="mobile-title" hidden>
+			<div class="card">
+				<h2 id="mobile-title">SKY DUEL</h2>
+				<div>브라우저 실시간 비행기 공중전</div>
+				<strong>PC에서 플레이해 주세요</strong>
+				<p>방향키와 스페이스바로 조종하는 게임이라 휴대폰에서는 플레이할 수 없어요. 링크를 복사해 PC 브라우저에서 열어 주세요.</p>
+				<button id="mobile-copy" type="button">링크 복사하기</button>
+				<div id="mobile-copied" aria-live="polite"></div>
+				<button id="mobile-continue" type="button">그래도 열어 보기 (약 10MB)</button>
+			</div>
+		</div>
+
 		<button id="info-toggle" type="button" aria-controls="about" aria-expanded="false">게임 정보</button>
 
 		<main id="about" hidden>
@@ -296,10 +373,10 @@ body {
 
 				<h2>주요 특징</h2>
 				<ul>
-					<li>실시간 멀티플레이: 같은 방 이름을 입력한 사람끼리 같은 하늘에서 대결합니다.</li>
+					<li>실시간 멀티플레이: 초대 링크를 보내거나 같은 방 이름을 입력한 사람끼리 같은 하늘에서 대결합니다.</li>
 					<li>AI 적기: 0~8대, 난이도 쉬움·보통·어려움을 시작 메뉴에서 고릅니다.</li>
 					<li>설치 불필요: 링크만 열면 데스크톱 브라우저에서 바로 실행됩니다.</li>
-					<li>입체감 있는 화면: 비행기 그림자, 높이가 다른 구름, 선회할 때 기울어지는 기체, 비행운과 폭발 효과.</li>
+					<li>입체감 있는 화면: 비행기 그림자, 높이가 다른 구름, 선회할 때 기울어지는 기체, 비행운과 폭발 효과, 발사·피격·폭발 효과음.</li>
 				</ul>
 
 				<h2>조작 방법</h2>
@@ -307,6 +384,8 @@ body {
 					<li><kbd>←</kbd><kbd>→</kbd> 또는 <kbd>A</kbd><kbd>D</kbd>: 선회</li>
 					<li><kbd>↑</kbd><kbd>↓</kbd> 또는 <kbd>W</kbd><kbd>S</kbd>: 속도 조절</li>
 					<li><kbd>Space</kbd>: 발사</li>
+					<li><kbd>L</kbd>: 초대 링크 복사</li>
+					<li><kbd>M</kbd>: 소리 켜기·끄기</li>
 					<li><kbd>Esc</kbd>: 메뉴로 나가기</li>
 				</ul>
 
@@ -322,15 +401,15 @@ body {
 				<h3>Sky Duel은 무료인가요?</h3>
 				<p>네. Sky Duel은 무료이며 회원가입 없이 닉네임만 정하면 바로 플레이할 수 있습니다.</p>
 				<h3>게임을 설치해야 하나요?</h3>
-				<p>아니요. 크롬, 엣지, 파이어폭스 같은 최신 데스크톱 브라우저에서 링크를 열면 바로 실행됩니다. 처음 접속할 때 약 40MB의 게임 엔진 파일을 내려받습니다.</p>
+				<p>아니요. 크롬, 엣지, 파이어폭스 같은 최신 데스크톱 브라우저에서 링크를 열면 바로 실행됩니다. 처음 접속할 때 약 10MB(압축 전송 기준)의 게임 엔진 파일을 내려받습니다.</p>
 				<h3>친구와 함께 플레이하려면 어떻게 하나요?</h3>
-				<p>시작 메뉴에서 친구와 같은 방 이름을 입력하고 출격하면 같은 하늘에서 실시간으로 대결합니다. 위치와 총알은 Supabase Realtime으로 동기화됩니다.</p>
+				<p>시작 메뉴의 '초대 링크 복사' 버튼(게임 중에는 L 키)으로 방 링크를 복사해 친구에게 보내면, 친구가 링크를 열 때 같은 방 이름이 자동으로 채워집니다. 같은 방 이름으로 출격하면 같은 하늘에서 실시간으로 대결하며, 위치와 총알은 Supabase Realtime으로 동기화됩니다.</p>
 				<h3>혼자서도 할 수 있나요?</h3>
 				<p>네. 시작 메뉴에서 AI 적기를 0~8대, 난이도를 쉬움·보통·어려움 중에서 고를 수 있습니다. 여럿이 함께할 때는 방장 한 명의 AI 설정을 따릅니다.</p>
 				<h3>조작 방법은 무엇인가요?</h3>
-				<p>방향키 ←→ 또는 A·D로 선회, ↑↓ 또는 W·S로 속도 조절, 스페이스바로 발사, Esc로 메뉴로 나갑니다.</p>
+				<p>방향키 ←→ 또는 A·D로 선회, ↑↓ 또는 W·S로 속도 조절, 스페이스바로 발사, L로 초대 링크 복사, M으로 소리 켜기·끄기, Esc로 메뉴로 나갑니다.</p>
 				<h3>휴대폰에서도 할 수 있나요?</h3>
-				<p>지금은 키보드 조작만 지원해서 데스크톱이나 노트북 브라우저에서 플레이하는 것을 권장합니다.</p>
+				<p>지금은 키보드 조작만 지원해서 데스크톱이나 노트북 브라우저에서 플레이해야 합니다. 휴대폰으로 열면 링크를 복사해 PC에서 열 수 있도록 안내 화면이 먼저 나옵니다.</p>
 
 				<h2>만든 방법</h2>
 				<p>Godot 4.7 엔진으로 만들어 웹으로 내보냈고, 멀티플레이 동기화는 Supabase Realtime(Broadcast·Presence), 호스팅은 Vercel을 사용합니다.</p>
@@ -373,7 +452,7 @@ const GODOT_CONFIG = $GODOT_CONFIG;
 const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
 const engine = new Engine(GODOT_CONFIG);
 
-(function () {
+function startEngine() {
 	const statusOverlay = document.getElementById('status');
 	const statusProgress = document.getElementById('status-progress');
 	const statusNotice = document.getElementById('status-notice');
@@ -471,6 +550,32 @@ const engine = new Engine(GODOT_CONFIG);
 			setStatusMode('hidden');
 		}, displayFailureNotice);
 	}
+}
+
+// 휴대폰(터치 전용 기기)이면 엔진을 받기 전에 PC 안내부터 보여 줍니다.
+(function () {
+	const touchOnly = window.matchMedia('(pointer: coarse)').matches && !window.matchMedia('(any-pointer: fine)').matches;
+	const isPhone = touchOnly || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+	if (!isPhone) {
+		startEngine();
+		return;
+	}
+	const notice = document.getElementById('mobile-notice');
+	const copied = document.getElementById('mobile-copied');
+	notice.hidden = false;
+	document.getElementById('mobile-copy').addEventListener('click', function () {
+		const url = location.href;
+		const done = function () { copied.textContent = '복사했어요! PC 브라우저 주소창에 붙여 넣어 주세요.'; };
+		if (navigator.clipboard && navigator.clipboard.writeText) {
+			navigator.clipboard.writeText(url).then(done, function () { copied.textContent = url; });
+		} else {
+			copied.textContent = url;
+		}
+	});
+	document.getElementById('mobile-continue').addEventListener('click', function () {
+		notice.hidden = true;
+		startEngine();
+	});
 }());
 		</script>
 	</body>

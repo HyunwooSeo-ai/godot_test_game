@@ -51,7 +51,10 @@ powershell -ExecutionPolicy Bypass -File tools/serve-web.ps1
 - 단일 스레드 빌드(`variant/thread_support=false`)라서 COOP/COEP 헤더 없이 어느 정적 호스팅에서도 열립니다.
 - `vercel.json`이 빌드·설치 단계를 끄고 `web/`을 출력 폴더로 지정합니다. GitHub `main`에 푸시하면 Vercel이 자동 배포합니다.
 - 웹에서는 시스템 글꼴을 쓸 수 없어 `fonts/NanumGothic-Regular.ttf`(OFL, 라이선스는 `fonts/OFL.txt`)를 포함합니다. 지우면 한글이 깨집니다.
-- 터치 조작은 없어서 휴대폰에서는 플레이할 수 없습니다.
+- 터치 조작은 없어서 휴대폰에서는 플레이할 수 없습니다. 그래서 `web_shell.html`이 터치 전용 기기를 감지하면 엔진을 받기 전에 "PC에서 플레이해 주세요" 안내(`#mobile-notice`, 링크 복사·그래도 열어 보기)를 띄우고, 엔진은 `startEngine()`을 부를 때만 받습니다.
+- 초대 링크는 `?room=방이름`입니다. 웹에서 `JavaScriptBridge`로 읽어 메뉴의 방 이름을 채우고(`_apply_invite_from_url`), 메뉴 버튼·L 키가 `DisplayServer.clipboard_set`으로 복사합니다. PC 버전은 `SITE_URL`로 링크를 만듭니다. canonical은 `?room` 없는 주소라 SEO에는 영향이 없습니다.
+- 효과음(발사·피격·폭발·출격)은 `main.gd`의 "효과음" 섹션이 코드로 합성하고, 거리만큼 작게 냅니다. M 키로 끄고 켜며 `user://settings.cfg`의 `muted`에 저장합니다. 데모(홍보 영상)·봇 모드에서는 소리를 내지 않습니다.
+- 첫 접속 다운로드는 Vercel 브로틀리 압축 덕분에 약 10.5MB(wasm 9.3MB)입니다. 문구를 바꿀 때 참고합니다.
 - `web/.gdignore`는 Godot가 `web/` 안의 파일을 리소스로 가져오지 않게 합니다. 지우면 `.import` 파일이 생기고 pck에도 섞입니다.
 - 푸시 후 배포가 반영됐는지는 `curl -s https://godottestgame.vercel.app/<파일> | grep <바뀐 내용>`을 반복해 확인합니다(보통 30초 안).
 - `og-image.png`는 `--screenshot`으로 찍은 게임 화면을 1200×630으로 잘라 제목을 얹은 것입니다. 그래픽을 크게 바꾸면 다시 만듭니다.
