@@ -70,6 +70,7 @@ powershell -ExecutionPolicy Bypass -File tools/serve-web.ps1
 
 - `web_shell.html`이 웹 내보내기의 HTML 셸입니다(`export_presets.cfg`의 `html/custom_html_shell`). Godot 기본 셸을 바탕으로 메타 태그, Open Graph/X 카드, canonical, JSON-LD(`WebSite`, `VideoGame`+`WebApplication`, `FAQPage`)와 "게임 정보" 버튼으로 여는 본문(`<main id="about">`)을 더했습니다. `web/index.html`은 내보낼 때마다 덮어써지므로 **고칠 때는 `web_shell.html`을 고칩니다.**
 - FAQ는 JSON-LD와 본문 두 곳에 같은 내용으로 있습니다. 게임 규칙(체력, 속도, AI 설정 등)을 바꾸면 두 곳과 `web/llms.txt`를 함께 고칩니다.
+- JSON-LD 문자열 안에는 큰따옴표(`"`)를 쓰지 않습니다(작은따옴표 사용). 고친 뒤에는 `<script type="application/ld+json">` 내용을 PowerShell `ConvertFrom-Json`으로 읽어 깨지지 않았는지 확인합니다.
 - 엔진이 시작하면서 문서 제목을 프로젝트 이름으로 바꾸기 때문에, 셸의 스크립트가 `MutationObserver`로 검색용 `<title>`을 되돌립니다. `project.godot`의 `config/name`은 바꾸지 않습니다(`user://` 저장 위치가 바뀝니다).
 - `web/`에 직접 둔 정적 파일: `robots.txt`(AI 크롤러 포함 전체 허용), `sitemap.xml`, `llms.txt`, `og-image.png`(1200×630). 내보내기는 `index.*`만 덮어쓰므로 지워지지 않습니다. 날짜가 바뀌는 큰 변경이면 `sitemap.xml`의 `lastmod`를 갱신합니다.
 - `web/googlea4d164898e2b8dbd.html`은 Google Search Console 소유권 확인 파일입니다(URL 접두어 속성 `https://godottestgame.vercel.app/`, 사이트맵 제출 완료). 지우면 소유권 확인이 풀립니다. 네이버 서치어드바이저 확인은 `web_shell.html`의 `naver-site-verification` 메타 태그입니다.
@@ -134,6 +135,9 @@ powershell -ExecutionPolicy Bypass -File tools/avi-to-mp4.ps1 -Src promo/output/
 - 한글이 들어간 `.ps1` 스크립트는 UTF-8 **BOM**으로 저장해야 PowerShell 5.1이 제대로 읽습니다.
 - 봇 여러 개를 동시에 띄우면 가끔 일부가 `joined: false`로 끝납니다(재현 안 되는 일시적 실패). 코드를 의심하기 전에 한 번 더 돌려 봅니다.
 - 내장 브라우저 창이 가려져 있으면 게임 프레임이 느려져, 키 입력과 속도를 자동화로 확인할 수 없습니다. 조작감은 사람이 직접 확인합니다.
+- 내장 브라우저 화면 크기 흉내: `mobile` 프리셋은 모바일 안내 확인에 쓸 수 있지만, 사용자 지정 크기(예: 1280×800)에서는 Godot 캔버스가 구석에 작게 그려져 데스크톱 확인에 쓸 수 없습니다.
+- 내장 브라우저는 `index.png` 같은 정적 파일을 캐시해 배포 직후 옛 그림을 보여 줄 수 있습니다. 서버 쪽은 `curl -sI`로 크기를 확인하고, 브라우저에서는 `fetch(url, {cache: 'reload'})` 뒤 다시 엽니다.
 - Claude in Chrome은 `searchadvisor.naver.com`을 안전 제한으로 열지 못합니다(네이버 작업은 사용자가 직접). Google 검증 도구(validator.schema.org 등)는 CAPTCHA를 띄울 수 있습니다.
+- Claude in Chrome 연결은 세션 중에도 끊길 수 있습니다. 작업 전에 연결된 브라우저 목록부터 확인하고, 0개면 확장의 Claude 계정이 이 앱 계정(구글 계정 아님)과 같은지 사용자에게 확인을 부탁합니다.
 - 새 스크립트를 추가한 직후 첫 `--export-release`는 클래스 스캔 때문에 종료 코드 -1을 낼 수 있습니다. 한 번 더 실행해 0이 나오면 정상입니다.
 - 이 PC에는 HEVC(H.265) 코덱이 없어 Media Foundation이 HEVC 영상을 재생하거나 변환하지 못합니다. 휴대폰·카카오톡 영상은 대개 HEVC입니다. `avi-to-mp4.ps1`이 만드는 H.264는 문제없습니다.
