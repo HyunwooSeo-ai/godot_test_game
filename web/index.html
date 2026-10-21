@@ -89,7 +89,7 @@
 				{
 					"@type": "Question",
 					"name": "조작 방법은 무엇인가요?",
-					"acceptedAnswer": { "@type": "Answer", "text": "방향키 ←→ 또는 A·D로 선회, ↑↓ 또는 W·S로 속도 조절, 스페이스바로 발사, L로 초대 링크 복사, M으로 소리 켜기·끄기, Esc로 메뉴로 나갑니다." }
+					"acceptedAnswer": { "@type": "Answer", "text": "방향키 ←→ 또는 A·D로 선회, ↑↓ 또는 W·S로 속도 조절, 스페이스바로 발사, L로 초대 링크 복사, M으로 소리 켜기·끄기, Esc를 두 번 눌러 메뉴로 나갑니다." }
 				},
 				{
 					"@type": "Question",
@@ -135,7 +135,7 @@ body {
 }
 
 #status {
-	background-color: #242424;
+	background-color: #040e1c;
 	display: flex;
 	flex-direction: column;
 	justify-content: center;
@@ -388,13 +388,13 @@ body {
 					<li><kbd>Space</kbd>: 발사</li>
 					<li><kbd>L</kbd>: 초대 링크 복사</li>
 					<li><kbd>M</kbd>: 소리 켜기·끄기</li>
-					<li><kbd>Esc</kbd>: 메뉴로 나가기</li>
+					<li><kbd>Esc</kbd> 두 번: 메뉴로 나가기</li>
 				</ul>
 
 				<h2>게임 규칙</h2>
 				<ul>
 					<li>체력은 4칸이며, 총알을 4번 맞으면 격추됩니다.</li>
-					<li>상대를 격추하면 점수가 1점 오르고, 점수판에서 순위를 확인할 수 있습니다.</li>
+					<li>상대를 격추하면 점수가 1점 오르고, 점수판에서 순위를 확인할 수 있습니다. 10대를 먼저 격추하면 그 판의 승리이며, 5초 뒤 점수를 초기화하고 새 판이 시작됩니다.</li>
 					<li>격추되면 2초 뒤 다시 출격하고, 출격 직후 3초 동안은 보호막으로 피해를 받지 않습니다.</li>
 					<li>화면 끝을 넘어가면 반대편에서 다시 나타납니다.</li>
 				</ul>
@@ -409,7 +409,7 @@ body {
 				<h3>혼자서도 할 수 있나요?</h3>
 				<p>네. 시작 메뉴에서 AI 적기를 0~8대, 난이도를 쉬움·보통·어려움 중에서 고를 수 있습니다. 여럿이 함께할 때는 방장 한 명의 AI 설정을 따릅니다.</p>
 				<h3>조작 방법은 무엇인가요?</h3>
-				<p>방향키 ←→ 또는 A·D로 선회, ↑↓ 또는 W·S로 속도 조절, 스페이스바로 발사, L로 초대 링크 복사, M으로 소리 켜기·끄기, Esc로 메뉴로 나갑니다.</p>
+				<p>방향키 ←→ 또는 A·D로 선회, ↑↓ 또는 W·S로 속도 조절, 스페이스바로 발사, L로 초대 링크 복사, M으로 소리 켜기·끄기, Esc를 두 번 눌러 메뉴로 나갑니다.</p>
 				<h3>휴대폰에서도 할 수 있나요?</h3>
 				<p>지금은 키보드 조작만 지원해서 데스크톱이나 노트북 브라우저에서 플레이해야 합니다. 휴대폰으로 열면 링크를 복사해 PC에서 열 수 있도록 안내 화면이 먼저 나옵니다.</p>
 
@@ -450,7 +450,7 @@ body {
 
 		<script src="index.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":1091712,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":1136280,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
 

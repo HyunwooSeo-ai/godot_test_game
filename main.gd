@@ -24,6 +24,9 @@ const MAX_HP := 4
 const HIT_RADIUS := 19.0
 const RESPAWN_SEC := 2.0
 const SHIELD_SEC := 3.0
+const WIN_SCORE := 10          # 이만큼 먼저 격추하면 그 판 승리
+const ROUND_BREAK := 5.0       # 승리 발표 후 새 판까지
+const ROUND_COOLDOWN := 2.0    # 새 판 직후 늦게 도착한 옛 점수로 다시 끝나지 않게 기다리는 시간
 const SEND_HZ := 10.0
 const PEER_TIMEOUT := 6.0
 const AI_MAX_COUNT := 8
@@ -112,6 +115,11 @@ var demo_mode := false       # 홍보 영상용 오프라인 데모(네트워크
 var bot_hp := MAX_HP
 var _args: Dictionary = {}
 var quit_after := 0.0
+var win_score := WIN_SCORE
+var round_over_left := 0.0     # > 0이면 승리 발표 중(발사 금지)
+var round_cooldown := 0.0
+var round_winner := ""
+var esc_armed_left := 0.0      # Esc를 한 번 누른 뒤 두 번째를 기다리는 시간
 var elapsed := 0.0
 var stats := {"joined": false, "peers_seen": 0, "states": 0, "shots": 0, "hits_taken": 0, "kills": 0}
 
@@ -131,6 +139,7 @@ func _ready() -> void:
 		if quit_after <= 0.0:
 			quit_after = 20.0
 		bot_hp = int(args.get("hp", str(MAX_HP)))
+		win_score = maxi(1, int(args.get("win", str(WIN_SCORE))))
 		ai_count = clampi(int(args.get("ai", "3")), 0, AI_MAX_COUNT)
 		ai_level = clampi(int(args.get("level", "1")), 0, AI_LEVELS.size() - 1)
 		_start(str(args.get("name", "Bot")), str(args.get("room", "test")))
@@ -295,7 +304,7 @@ func _build_menu() -> void:
 	status_label = _label("", 16, Color(1.0, 0.75, 0.4))
 	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(status_label)
-	box.add_child(_label("←→ / A D 회전   ↑↓ / W S 속도\nSpace 발사   L 초대 링크   M 소리   Esc 나가기", 15, Color(0.75, 0.75, 0.8)))
+	box.add_child(_label("←→ / A D 회전   ↑↓ / W S 속도\nSpace 발사   L 초대 링크   M 소리   Esc 두 번: 나가기", 15, Color(0.75, 0.75, 0.8)))
 	_load_settings()
 
 
@@ -431,6 +440,9 @@ func _back_to_menu(message: String) -> void:
 	ai_planes.clear()
 	ai_announced = false
 	remote_ai_level = -1
+	round_over_left = 0.0
+	round_cooldown = 0.0
+	esc_armed_left = 0.0
 	bullets.clear()
 	feed.clear()
 	trails.clear()
@@ -442,7 +454,12 @@ func _back_to_menu(message: String) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_ESCAPE and mode == Mode.PLAYING:
-			_leave()
+			# 실수로 나가지 않도록 2초 안에 한 번 더 눌러야 나갑니다.
+			if esc_armed_left > 0.0:
+				_leave()
+			else:
+				esc_armed_left = 2.0
+				_add_feed("Esc를 한 번 더 누르면 메뉴로 나가요")
 		elif event.physical_keycode == KEY_M and mode == Mode.PLAYING:
 			_toggle_mute()
 		elif event.physical_keycode == KEY_L and mode == Mode.PLAYING:
@@ -469,6 +486,8 @@ func _process(delta: float) -> void:
 		_update_peers(delta)
 		_manage_ai()
 		_update_ai(delta)
+		_update_round(delta)
+		esc_armed_left = maxf(0.0, esc_armed_left - delta)
 		send_left -= delta
 		if send_left <= 0.0:
 			send_left = 1.0 / SEND_HZ
@@ -478,6 +497,47 @@ func _process(delta: float) -> void:
 	_update_effects(delta)
 	_update_scenery(delta)
 	queue_redraw()
+
+
+func _board() -> Array:
+	# 점수판 항목: 나, 다른 플레이어(받은 AI 포함), 내가 방장일 때의 AI
+	var board := [{"name": my_name, "score": score, "color": my_color, "me": true}]
+	for peer in peers.values():
+		board.append({"name": peer["name"], "score": peer["score"], "color": peer["color"], "me": false})
+	for ai in ai_planes.values():
+		board.append({"name": ai["name"], "score": ai["score"], "color": ai["color"], "me": false})
+	board.sort_custom(func(l: Dictionary, r: Dictionary) -> bool: return int(l["score"]) > int(r["score"]))
+	return board
+
+
+func _update_round(delta: float) -> void:
+	# 판 진행: 누군가 win_score에 닿으면 모두가 각자 같은 점수를 보고 승리를 발표하고,
+	# ROUND_BREAK 뒤에 각자 자기 점수(방장은 AI 점수도)를 0으로 돌립니다. 서버 없이 같은 규칙으로 맞춥니다.
+	if demo_mode:
+		return
+	if round_over_left > 0.0:
+		round_over_left -= delta
+		if round_over_left <= 0.0:
+			score = 0
+			deaths = 0
+			for ai in ai_planes.values():
+				ai["score"] = 0
+			round_cooldown = ROUND_COOLDOWN
+			stats["rounds"] = int(stats.get("rounds", 0)) + 1
+			_add_feed("새 판 시작! %d대를 먼저 격추하세요" % win_score)
+			_play_sfx("spawn", pos, -4.0)
+			_send_state()
+		return
+	if round_cooldown > 0.0:
+		round_cooldown -= delta
+		return
+	var top: Dictionary = _board()[0]
+	if int(top["score"]) >= win_score:
+		round_winner = str(top["name"])
+		round_over_left = ROUND_BREAK
+		_add_feed("%s 승리! (%d격추)" % [round_winner, int(top["score"])])
+		_log("round won by " + round_winner)
+		_play_sfx("spawn", pos, 0.0)
 
 
 func _spawn() -> void:
@@ -524,7 +584,7 @@ func _update_me(delta: float) -> void:
 	bank = lerpf(bank, turn, minf(1.0, delta * 5.0))
 	speed = clampf(speed + thrust * ACCEL * delta, MIN_SPEED, MAX_SPEED)
 	pos = _wrap(pos + Vector2.RIGHT.rotated(angle) * speed * delta)
-	if fire and fire_cd <= 0.0:
+	if fire and fire_cd <= 0.0 and round_over_left <= 0.0:
 		_fire()
 
 
@@ -812,7 +872,7 @@ func _update_ai(delta: float) -> void:
 		ai["speed"] = v
 		ai["pos"] = _wrap(at + Vector2.RIGHT.rotated(a) * v * delta)
 
-		if fire and float(ai["fire_cd"]) <= 0.0:
+		if fire and float(ai["fire_cd"]) <= 0.0 and round_over_left <= 0.0:
 			ai["fire_cd"] = float(lv["cooldown"]) + randf() * 0.4
 			ai["fire_seq"] = int(ai["fire_seq"]) + 1
 			var bid := "%s-%d" % [id, ai["fire_seq"]]
@@ -1264,8 +1324,28 @@ func _draw() -> void:
 		_draw_vignette()
 
 	if mode == Mode.PLAYING:
-		for pl in planes:
-			_draw_plane_label(pl)
+		# 이름표가 겹치면 위로 한 줄씩 올립니다. 내 이름표가 먼저 자리를 잡습니다.
+		var ordered := planes.duplicate()
+		ordered.sort_custom(func(l: Dictionary, r: Dictionary) -> bool: return bool(l["me"]) and not bool(r["me"]))
+		var placed: Array = []
+		for pl in ordered:
+			var label := _label_text(pl)
+			var w := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x + 8.0
+			var at: Vector2 = pl["pos"]
+			var r := Rect2(at.x - w / 2, at.y - 54, w, 17)
+			var dy := 0.0
+			for attempt in 4:
+				var hit := false
+				for q in placed:
+					if (q as Rect2).intersects(r):
+						hit = true
+						break
+				if not hit:
+					break
+				r.position.y -= 17.0
+				dy -= 17.0
+			placed.append(r)
+			_draw_plane_label(pl, dy)
 		if not demo_mode:
 			_draw_hud()
 
@@ -1367,10 +1447,17 @@ func _draw_plane(pl: Dictionary) -> void:
 		draw_arc(at, 38, 0, TAU, 40, Color(0.55, 0.85, 1.0, pulse), 2.0, true)
 
 
-func _draw_plane_label(pl: Dictionary) -> void:
+func _label_text(pl: Dictionary) -> String:
+	return str(pl["name"]) + (" (나)" if bool(pl["me"]) else "")
+
+
+func _draw_plane_label(pl: Dictionary, dy: float) -> void:
 	var at: Vector2 = pl["pos"]
-	var label := str(pl["name"]) + (" (나)" if bool(pl["me"]) else "")
-	_text(at + Vector2(-70, -40), label, 14, Color(1, 1, 1, 0.95), HORIZONTAL_ALIGNMENT_CENTER, 140)
+	var label := _label_text(pl)
+	if dy < 0.0:
+		# 밀려 올라간 이름표는 기체와 이어지는 가는 선을 그립니다.
+		draw_line(at + Vector2(0, -36 + dy), at + Vector2(0, -30), Color(1, 1, 1, 0.25), 1.0)
+	_text(at + Vector2(-90, -40 + dy), label, 14, Color(1, 1, 1, 0.95), HORIZONTAL_ALIGNMENT_CENTER, 180)
 	var hp_value := int(pl["hp"])
 	var x0 := at.x - (MAX_HP * 11 - 2) / 2.0
 	draw_rect(Rect2(x0 - 2, at.y + 31, MAX_HP * 11 + 2, 7), Color(0, 0, 0, 0.35))
@@ -1430,15 +1517,11 @@ func _draw_hud() -> void:
 		_text(Vector2(18, y), str(f["text"]), 15, Color(1, 1, 1, clampf(float(f["t"]), 0.0, 1.0)))
 		y += 22.0
 
-	var board := [{"name": my_name, "score": score, "color": my_color, "me": true}]
-	for peer in peers.values():
-		board.append({"name": peer["name"], "score": peer["score"], "color": peer["color"], "me": false})
-	for ai in ai_planes.values():
-		board.append({"name": ai["name"], "score": ai["score"], "color": ai["color"], "me": false})
-	board.sort_custom(func(l: Dictionary, r: Dictionary) -> bool: return int(l["score"]) > int(r["score"]))
+	var board := _board()
 	var bx := ARENA.x - 252.0
 	draw_style_box(hud_box, Rect2(bx, 10, 240, 44 + board.size() * 26))
 	_text(Vector2(bx + 16, 36), "점수판", 15, Color(0.7, 0.82, 1.0))
+	_text(Vector2(bx + 120, 36), "목표 %d격추" % win_score, 13, Color(1, 0.86, 0.45, 0.85), HORIZONTAL_ALIGNMENT_RIGHT, 104)
 	var row := 64.0
 	for entry in board:
 		if bool(entry["me"]):
@@ -1448,7 +1531,12 @@ func _draw_hud() -> void:
 		_text(Vector2(bx + 180, row), str(entry["score"]), 15, Color(1, 0.86, 0.45), HORIZONTAL_ALIGNMENT_RIGHT, 44)
 		row += 26.0
 
+	if round_over_left > 0.0:
+		var winner_text := "%s 승리!" % round_winner
+		draw_style_box(hud_box, Rect2(ARENA.x / 2 - 300, ARENA.y / 2 - 150, 600, 120))
+		_text(Vector2(0, ARENA.y / 2 - 92), winner_text, 40, Color(1, 0.86, 0.45), HORIZONTAL_ALIGNMENT_CENTER, ARENA.x)
+		_text(Vector2(0, ARENA.y / 2 - 50), "%.0f초 뒤 새 판이 시작됩니다" % ceilf(round_over_left), 18, Color(0.9, 0.95, 1.0), HORIZONTAL_ALIGNMENT_CENTER, ARENA.x)
 	if not alive:
 		draw_style_box(hud_box, Rect2(ARENA.x / 2 - 240, ARENA.y / 2 - 42, 480, 64))
 		_text(Vector2(0, ARENA.y / 2), "격추되었습니다! %.1f초 뒤 다시 출격" % maxf(respawn_left, 0.0), 24, Color(1, 0.68, 0.55), HORIZONTAL_ALIGNMENT_CENTER, ARENA.x)
-	_text(Vector2(18, ARENA.y - 18), "←→ / A D 회전    ↑↓ / W S 속도    Space 발사    L 초대 링크    M 소리 %s    Esc 나가기" % ("꺼짐" if muted else "켜짐"), 14, Color(1, 1, 1, 0.7))
+	_text(Vector2(18, ARENA.y - 18), "←→ / A D 회전    ↑↓ / W S 속도    Space 발사    L 초대 링크    M 소리 %s    Esc 두 번: 나가기" % ("꺼짐" if muted else "켜짐"), 14, Color(1, 1, 1, 0.7))

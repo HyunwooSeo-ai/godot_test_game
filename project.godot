@@ -8,6 +8,8 @@ config/name="Sky Duel"
 config/description="Supabase Realtime으로 동기화하는 실시간 공중전"
 run/main_scene="res://main.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
+boot_splash/bg_color=Color(0.016, 0.055, 0.11, 1)
+boot_splash/image="res://splash.png"
 
 [display]
 
