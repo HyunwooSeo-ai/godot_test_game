@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Sky Duel은 Godot 4.7(GDScript)로 만든 2D 실시간 공중전 게임입니다. 같은 방에 들어온 플레이어끼리 Supabase Realtime(Broadcast·Presence)으로 상태를 주고받습니다. 서버 코드와 DB 테이블은 없고 Realtime 채널만 씁니다. UI 문구와 주석은 한국어로 씁니다.
 
-- Supabase 프로젝트는 NINE STORE 쇼핑몰과 같은 `nine-store`(`dyfieegfgskszpyldhzs`)를 빌려 씁니다. URL과 publishable 키는 `main.gd` 맨 위 상수에 있습니다. 채널 이름은 `skyduel-<방 이름>`입니다. 방 이름은 한글·영문 소문자·숫자·`_`·`-`만 남기고(`_clean_room`), 한글이 섞이면 채널 이름을 `skyduel-u.<sha256 앞 16자>`로 바꿉니다(`_channel_of`). 영문 방 이름은 예전과 같은 채널이라 기존 초대 링크가 그대로 동작합니다.
+- Supabase 프로젝트는 게임 전용 `sky-duel`(`yvnwcqndxvztidknkult`, 서울 리전, 무료 요금제)입니다. 2026-10-21까지는 NINE STORE 쇼핑몰의 `nine-store`를 함께 썼는데, Realtime 한도를 나눠 쓰지 않도록 분리했습니다. URL과 publishable 키는 `main.gd` 맨 위 상수에 있고, 프로젝트를 바꾸면 `vercel.json` CSP의 `connect-src`도 함께 바꿉니다. 같은 조직의 무료 프로젝트 2개(쇼핑몰, 게임)를 모두 쓰고 있습니다. 채널 이름은 `skyduel-<방 이름>`입니다. 방 이름은 한글·영문 소문자·숫자·`_`·`-`만 남기고(`_clean_room`), 한글이 섞이면 채널 이름을 `skyduel-u.<sha256 앞 16자>`로 바꿉니다(`_channel_of`). 영문 방 이름은 예전과 같은 채널이라 기존 초대 링크가 그대로 동작합니다.
 - 무료 요금제의 Realtime 메시지 한도가 있으니 전송 빈도(`SEND_HZ`)나 이벤트 수를 늘릴 때 주의합니다.
 
 ## 실행과 검증

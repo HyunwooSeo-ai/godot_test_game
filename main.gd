@@ -7,8 +7,8 @@ extends Node2D
 
 const RealtimeClient = preload("res://realtime_client.gd")
 
-const SUPABASE_URL := "https://dyfieegfgskszpyldhzs.supabase.co"
-const SUPABASE_KEY := "sb_publishable_6CYWcAoFrPU3LZ3MmoKgPA_uOfs8_MP"
+const SUPABASE_URL := "https://yvnwcqndxvztidknkult.supabase.co"
+const SUPABASE_KEY := "sb_publishable_vJF69wkepVHSlNL-RaR0vA_CfxxDE9q"
 const CHANNEL_PREFIX := "skyduel-"
 const SITE_URL := "https://godottestgame.vercel.app/"  # PC 버전에서 초대 링크를 만들 때 씁니다
 const ARENA := Vector2(1280, 720)
