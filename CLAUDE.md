@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Sky Duel은 Godot 4.7(GDScript)로 만든 2D 실시간 공중전 게임입니다. 같은 방에 들어온 플레이어끼리 Supabase Realtime(Broadcast·Presence)으로 상태를 주고받습니다. 서버 코드와 DB 테이블은 없고 Realtime 채널만 씁니다. UI 문구와 주석은 한국어로 씁니다.
 
-- Supabase 프로젝트는 NINE STORE 쇼핑몰과 같은 `nine-store`(`dyfieegfgskszpyldhzs`)를 빌려 씁니다. URL과 publishable 키는 `main.gd` 맨 위 상수에 있습니다. 채널 이름은 `skyduel-<방 이름>`입니다.
+- Supabase 프로젝트는 NINE STORE 쇼핑몰과 같은 `nine-store`(`dyfieegfgskszpyldhzs`)를 빌려 씁니다. URL과 publishable 키는 `main.gd` 맨 위 상수에 있습니다. 채널 이름은 `skyduel-<방 이름>`입니다. 방 이름은 한글·영문 소문자·숫자·`_`·`-`만 남기고(`_clean_room`), 한글이 섞이면 채널 이름을 `skyduel-u.<sha256 앞 16자>`로 바꿉니다(`_channel_of`). 영문 방 이름은 예전과 같은 채널이라 기존 초대 링크가 그대로 동작합니다.
 - 무료 요금제의 Realtime 메시지 한도가 있으니 전송 빈도(`SEND_HZ`)나 이벤트 수를 늘릴 때 주의합니다.
 
 ## 실행과 검증
@@ -50,6 +50,7 @@ powershell -ExecutionPolicy Bypass -File tools/serve-web.ps1
 - 내보내기 템플릿은 `%APPDATA%\Godot\export_templates\4.7.2.stable\`에 웹용(`web_nothreads_*.zip`)만 풀어 두었습니다. Godot 버전을 올리면 템플릿도 같은 버전으로 다시 받아야 합니다.
 - 단일 스레드 빌드(`variant/thread_support=false`)라서 COOP/COEP 헤더 없이 어느 정적 호스팅에서도 열립니다.
 - `vercel.json`이 빌드·설치 단계를 끄고 `web/`을 출력 폴더로 지정합니다. GitHub `main`에 푸시하면 Vercel이 자동 배포합니다.
+- `vercel.json`은 모든 경로에 보안 헤더(CSP, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy)를 붙입니다. Godot에 `'wasm-unsafe-eval'`, `JavaScriptBridge.eval`에 `'unsafe-eval'`, 셸 인라인 스크립트에 `'unsafe-inline'`이 필요합니다. `connect-src`는 Supabase wss 주소만 허용하므로 다른 서버에 접속하게 되면 함께 고칩니다. `frame-ancestors 'self'`라 CrazyGames·Poki 같은 포털 iframe에 넣으려면 그 도메인을 추가해야 합니다.
 - 웹에서는 시스템 글꼴을 쓸 수 없어 `fonts/NanumGothic-Regular.ttf`(OFL, 라이선스는 `fonts/OFL.txt`)를 포함합니다. 지우면 한글이 깨집니다.
 - 터치 조작은 없어서 휴대폰에서는 플레이할 수 없습니다. 그래서 `web_shell.html`이 터치 전용 기기를 감지하면 엔진을 받기 전에 "PC에서 플레이해 주세요" 안내(`#mobile-notice`, 링크 복사·그래도 열어 보기)를 띄우고, 엔진은 `startEngine()`을 부를 때만 받습니다.
 - 초대 링크는 `?room=방이름`입니다. 웹에서 `JavaScriptBridge`로 읽어 메뉴의 방 이름을 채우고(`_apply_invite_from_url`), 메뉴 버튼·L 키가 `DisplayServer.clipboard_set`으로 복사합니다. PC 버전은 `SITE_URL`로 링크를 만듭니다. canonical은 `?room` 없는 주소라 SEO에는 영향이 없습니다.
@@ -105,6 +106,8 @@ powershell -ExecutionPolicy Bypass -File tools/avi-to-mp4.ps1 -Src promo/output/
 - 각 클라이언트는 자기 비행기와 자기 총알만 직접 움직입니다. 남의 비행기는 `state`를 받아 보간하고 다음 state까지 마지막 속도로 예측합니다(`_update_peers`).
 - 총알은 `shot` 이벤트(시작 위치·각도)로 알리고, 받는 쪽이 같은 궤적을 직접 시뮬레이션합니다.
 - 피격 판정은 맞은 쪽이 합니다. 맞은 쪽이 `hit`를 보내고, 격추면 쏜 쪽이 그 메시지를 받고 자기 점수를 올립니다. Broadcast는 `self: false`라 자기가 보낸 이벤트는 돌아오지 않습니다. 그래서 자기가 판정한 피격의 처리는 로컬에서 따로 합니다.
+
+- 채널은 public이라 누구나 메시지를 보낼 수 있습니다. 그래서 받는 쪽("수신" 섹션)이 모든 값을 검증합니다: 숫자는 `_num`(유한값·범위), id·bid는 `_id`(영문 소문자·숫자·`-`, 40자), 좌표는 `_point`. `state`·`shot`은 presence에 있는 사람(또는 받은 AI)만, `ai`는 방장만, AI id는 `방장id-ai`로 시작할 때만 받습니다. 점수는 한 번에 1점까지만 오르고, 내 점수는 최근 3초 안에 쏜 내 bid(`own_shots`)에 대한 `hit`일 때만 오르며 bid 하나는 한 번만 처리합니다(`seen_hits`). 상대·총알 수는 `MAX_PEERS`, `MAX_BULLETS`, `MAX_BULLETS_PER_OWNER`로 막습니다. 새 필드를 보내면 받는 쪽 검증도 함께 추가합니다.
 
 | 이벤트 | 보내는 쪽 | 내용 |
 | --- | --- | --- |

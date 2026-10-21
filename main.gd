@@ -29,6 +29,12 @@ const ROUND_BREAK := 5.0       # 승리 발표 후 새 판까지
 const ROUND_COOLDOWN := 2.0    # 새 판 직후 늦게 도착한 옛 점수로 다시 끝나지 않게 기다리는 시간
 const SEND_HZ := 10.0
 const PEER_TIMEOUT := 6.0
+# 받은 메시지의 상한. 서버가 검사하지 않으므로 클라이언트마다 직접 막습니다.
+const MAX_PEERS := 24              # 사람 + 받은 AI
+const MAX_BULLETS := 200
+const MAX_BULLETS_PER_OWNER := 10  # 사람은 연사 간격상 최대 6발 정도가 동시에 날아갑니다
+const MAX_ID_LEN := 40
+const SHOT_MEMORY := 3.0           # 내 총알 bid를 기억하는 시간(늦게 도착한 hit 대조용)
 const AI_MAX_COUNT := 8
 const AI_RESPAWN_SEC := 4.0
 const AI_FIRE_RANGE := 430.0
@@ -53,6 +59,7 @@ enum Mode { MENU, CONNECTING, PLAYING }
 var mode := Mode.MENU
 var rt: RealtimeClient
 var room := ""
+var room_notice := ""        # 입력한 방 이름이 바뀌었을 때 입장 후 피드에 알릴 문구
 
 # 내 비행기
 var my_id := ""
@@ -73,6 +80,9 @@ var bullet_seq := 0
 var bank := 0.0              # 선회할 때 기울어진 정도(-1~1). 그리기에만 씁니다.
 
 var bullets: Array = []      # { bid, owner, pos, vel, life }
+var own_shots: Dictionary = {}  # 나와 내 AI가 쏜 bid -> 쏜 시각. hit가 오면 지워서 한 발이 한 번만 점수가 되게 합니다.
+var seen_hits: Dictionary = {}  # 이미 처리한 hit의 bid -> 받은 시각
+var id_regex := RegEx.create_from_string("^[0-9a-z-]+$")
 var peers: Dictionary = {}   # id -> { name, color, pos, target, angle, target_angle, speed, hp, alive, score, last_seen }
 var ai_planes: Dictionary = {}  # 내가 방장일 때 직접 움직이는 AI. id -> { name, color, pos, angle, speed, hp, alive, shield, fire_cd, respawn_left, score, wobble }
 var ai_seq := 0
@@ -335,9 +345,18 @@ func _save_settings() -> void:
 # https://godottestgame.vercel.app/?room=방이름 으로 들어오면 방 이름을 채워 둡니다(출격은 사용자가 누름).
 
 func _clean_room(text: String) -> String:
-	var regex := RegEx.create_from_string("[^a-z0-9_-]")
-	var r := regex.sub(text.strip_edges().to_lower(), "", true)
+	# 한글(완성형·자모), 영문 소문자, 숫자, _ - 만 남깁니다.
+	var regex := RegEx.create_from_string("[^a-z0-9가-힣ㄱ-ㅣ_-]")
+	var r := regex.sub(text.strip_edges().to_lower(), "", true).left(20)
 	return r if not r.is_empty() else "lobby"
+
+
+func _channel_of(room_name: String) -> String:
+	# 영문 방 이름은 그대로 써서 예전 링크와 맞추고, 한글이 섞이면 해시로 바꿔 채널 이름을 ASCII로 유지합니다.
+	# "u."의 점은 _clean_room이 지우는 문자라 영문 방 이름과 겹치지 않습니다.
+	if RegEx.create_from_string("^[a-z0-9_-]+$").search(room_name):
+		return CHANNEL_PREFIX + room_name
+	return CHANNEL_PREFIX + "u." + room_name.sha256_text().left(16)
 
 
 func _invite_url(room_name: String) -> String:
@@ -381,7 +400,10 @@ func _on_join_pressed() -> void:
 	ai_count = int(ai_count_spin.value)
 	ai_level = maxi(0, ai_level_option.selected)
 	_save_settings()
-	_start(nick, _clean_room(room_edit.text))
+	var clean := _clean_room(room_edit.text)
+	if clean != room_edit.text.strip_edges().to_lower():
+		room_notice = "방 이름에는 한글·영문·숫자·_·-만 쓸 수 있어 '%s' 방으로 들어갔어요" % clean
+	_start(nick, clean)
 
 
 # ---------------------------------------------------------------- 접속
@@ -404,7 +426,7 @@ func _start(nick: String, room_name: String) -> void:
 	rt.broadcast_received.connect(_on_broadcast)
 	rt.presence_joined.connect(_on_presence_joined)
 	rt.presence_left.connect(_on_presence_left)
-	rt.connect_room(SUPABASE_URL, SUPABASE_KEY, CHANNEL_PREFIX + room, my_id)
+	rt.connect_room(SUPABASE_URL, SUPABASE_KEY, _channel_of(room), my_id)
 
 
 func _on_joined() -> void:
@@ -415,6 +437,9 @@ func _on_joined() -> void:
 	rt.track({"id": my_id, "name": my_name, "color": my_color.to_html(false)})
 	_spawn()
 	_add_feed("'%s' 방에 입장했습니다" % room)
+	if room_notice != "":
+		_add_feed(room_notice)
+		room_notice = ""
 
 
 func _on_failed(reason: String) -> void:
@@ -444,6 +469,8 @@ func _back_to_menu(message: String) -> void:
 	round_cooldown = 0.0
 	esc_armed_left = 0.0
 	bullets.clear()
+	own_shots.clear()
+	seen_hits.clear()
 	feed.clear()
 	trails.clear()
 	menu_root.visible = true
@@ -493,6 +520,7 @@ func _process(delta: float) -> void:
 			send_left = 1.0 / SEND_HZ
 			_send_state()
 			_send_ai()
+			_prune_shot_memory()
 		_update_trails(delta)
 	_update_effects(delta)
 	_update_scenery(delta)
@@ -598,6 +626,8 @@ func _fire() -> void:
 
 
 func _add_bullet(bid: String, owner: String, start: Vector2, a: float) -> void:
+	if owner == my_id or ai_planes.has(owner):
+		own_shots[bid] = elapsed
 	_play_sfx("shot", start, -8.0 if owner == my_id else -14.0)
 	bullets.append({"bid": bid, "owner": owner, "pos": start, "vel": Vector2.RIGHT.rotated(a) * BULLET_SPEED, "life": BULLET_LIFE})
 
@@ -661,66 +691,142 @@ func _send_state() -> void:
 func _on_broadcast(event: String, p: Dictionary) -> void:
 	match event:
 		"state":
-			var id := str(p.get("id", ""))
-			if id != "" and id != my_id:
+			var id := _id(p.get("id"))
+			if _is_human(id):
 				stats["states"] += 1
 				_upsert_peer(id, p)
 		"shot":
-			var id := str(p.get("id", ""))
-			if id != "" and id != my_id:
-				stats["shots"] += 1
-				_add_bullet(str(p.get("bid", "")), id, Vector2(float(p.get("x", 0)), float(p.get("y", 0))), float(p.get("a", 0)))
+			_on_shot(p)
 		"hit":
 			_on_hit(p)
 		"ai":
 			_on_ai_states(p)
 
 
-func _upsert_peer(id: String, p: Dictionary) -> void:
-	var target := Vector2(float(p.get("x", 0)), float(p.get("y", 0)))
-	var a := float(p.get("a", 0))
-	var now_alive := bool(p.get("alive", true))
+# ---- 받은 값 검증. 누구나 채널에 메시지를 보낼 수 있으므로 타입·범위·개수를 모두 확인합니다.
+
+func _num(v: Variant, fallback: float, lo := -INF, hi := INF) -> float:
+	if (typeof(v) != TYPE_FLOAT and typeof(v) != TYPE_INT) or not is_finite(float(v)):
+		return fallback
+	return clampf(float(v), lo, hi)
+
+
+func _flag(v: Variant, fallback: bool) -> bool:
+	return bool(v) if typeof(v) == TYPE_BOOL else fallback
+
+
+func _id(v: Variant) -> String:
+	# id와 bid는 영문 소문자·숫자·- 로만 이루어진 짧은 문자열이어야 합니다. 아니면 ""를 돌려줍니다.
+	if typeof(v) != TYPE_STRING:
+		return ""
+	var s: String = v
+	return s if s.length() <= MAX_ID_LEN and id_regex.search(s) else ""
+
+
+func _point(p: Dictionary) -> Variant:
+	# x, y가 유한한 숫자일 때만 화면 안 좌표로, 아니면 null
+	var x := _num(p.get("x"), NAN)
+	var y := _num(p.get("y"), NAN)
+	if is_nan(x) or is_nan(y):
+		return null
+	return _wrap(Vector2(x, y))
+
+
+func _is_human(id: String) -> bool:
+	# presence에 있는 다른 사람만 상대로 받습니다. 없는 id로 보낸 state로 가짜 비행기를 만들 수 없게 합니다.
+	return id != "" and id != my_id and rt != null and rt.presence.has(id)
+
+
+func _upsert_peer(id: String, p: Dictionary) -> bool:
+	var target: Variant = _point(p)
+	if target == null:
+		return false
+	if not peers.has(id) and peers.size() >= MAX_PEERS:
+		return false
+	var a := wrapf(_num(p.get("a"), 0.0), -PI, PI)
+	var now_alive := _flag(p.get("alive"), true)
+	var new_score := int(_num(p.get("score"), 0.0, 0.0, win_score))
 	var peer: Dictionary
 	if peers.has(id):
 		peer = peers[id]
 		if now_alive and not bool(peer["alive"]):
 			peer["pos"] = target
 			peer["angle"] = a
+		# 격추는 한 번에 하나씩 state로 알리므로 점수가 한꺼번에 2점 이상 오르면 받지 않습니다(새 판으로 내려가는 것은 허용).
+		new_score = mini(new_score, int(peer["score"]) + 1)
 	else:
 		peer = {"pos": target, "angle": a}
 		peers[id] = peer
 		stats["peers_seen"] += 1
 		_log("peer seen: " + str(p.get("name", id)))
-	peer["name"] = str(p.get("name", "?")).left(12)
-	peer["color"] = Color.from_string(str(p.get("color", "ffffff")), Color.WHITE)
+	var nick := str(p.get("name", "?")).strip_edges().left(12)
+	peer["name"] = nick if nick != "" else "?"
+	peer["color"] = Color.from_string(str(p.get("color", "ffffff")).left(8), Color.WHITE)
 	peer["target"] = target
 	peer["target_angle"] = a
-	peer["speed"] = float(p.get("v", 200))
-	peer["hp"] = int(p.get("hp", MAX_HP))
+	peer["speed"] = _num(p.get("v"), START_SPEED, MIN_SPEED, MAX_SPEED)
+	peer["hp"] = int(_num(p.get("hp"), MAX_HP, 0, MAX_HP))
 	peer["alive"] = now_alive
-	peer["score"] = int(p.get("score", 0))
+	peer["score"] = new_score
 	peer["last_seen"] = elapsed
+	return true
+
+
+func _on_shot(p: Dictionary) -> void:
+	var id := _id(p.get("id"))
+	var bid := _id(p.get("bid"))
+	var start: Variant = _point(p)
+	# 쏜 쪽은 presence에 있는 사람이거나 이미 받은 AI여야 합니다.
+	if bid == "" or start == null or not (_is_human(id) or (peers.has(id) and bool(peers[id].get("ai", false)))):
+		return
+	if bullets.size() >= MAX_BULLETS:
+		return
+	var count := 0
+	for b in bullets:
+		if b["owner"] == id:
+			count += 1
+	if count >= MAX_BULLETS_PER_OWNER:
+		return
+	stats["shots"] += 1
+	_add_bullet(bid, id, start, wrapf(_num(p.get("a"), 0.0), -PI, PI))
+
+
+func _prune_shot_memory() -> void:
+	for bid in own_shots.keys():
+		if elapsed - float(own_shots[bid]) > SHOT_MEMORY:
+			own_shots.erase(bid)
+	for bid in seen_hits.keys():
+		if elapsed - float(seen_hits[bid]) > SHOT_MEMORY:
+			seen_hits.erase(bid)
 
 
 func _on_hit(p: Dictionary) -> void:
-	var victim := str(p.get("victim", ""))
-	var shooter := str(p.get("shooter", ""))
-	var bid := str(p.get("bid", ""))
+	var victim := _id(p.get("victim"))
+	var shooter := _id(p.get("shooter"))
+	var bid := _id(p.get("bid"))
+	# 피해자는 내가 받은 상대여야 합니다. 나와 내 AI의 피격은 내가 직접 판정하므로 남이 보낸 것은 무시합니다.
+	if victim == "" or shooter == "" or bid == "" or not peers.has(victim) or seen_hits.has(bid):
+		return
+	# 나 또는 내 AI가 쏜 총알이라면 실제로 최근에 쏜 bid인지 확인합니다. 한 발은 한 번만 맞습니다.
+	var mine := shooter == my_id or ai_planes.has(shooter)
+	if mine and not own_shots.has(bid):
+		return
+	own_shots.erase(bid)
+	seen_hits[bid] = elapsed
 	if shooter == my_id:
 		stats["hits_given"] = int(stats.get("hits_given", 0)) + 1
 	for i in range(bullets.size() - 1, -1, -1):
 		if bullets[i]["bid"] == bid:
 			bullets.remove_at(i)
-	var where := pos
-	if peers.has(victim):
-		var peer: Dictionary = peers[victim]
-		peer["hp"] = int(p.get("hp", 0))
-		where = peer["pos"]
-		_spark(where)
-	if bool(p.get("killed", false)):
-		if peers.has(victim):
-			peers[victim]["alive"] = false
-			_explode(where, peers[victim]["color"])
+	var peer: Dictionary = peers[victim]
+	var was_alive := bool(peer["alive"])
+	var left_hp := int(_num(p.get("hp"), 0, 0, MAX_HP))
+	peer["hp"] = left_hp
+	var where: Vector2 = peer["pos"]
+	_spark(where)
+	if _flag(p.get("killed"), false) and left_hp <= 0 and was_alive:
+		peer["alive"] = false
+		_explode(where, peer["color"])
 		if shooter == my_id:
 			score += 1
 			stats["kills"] += 1
@@ -732,7 +838,7 @@ func _on_hit(p: Dictionary) -> void:
 
 func _on_presence_joined(key: String, meta: Dictionary) -> void:
 	if key != my_id:
-		_add_feed("%s 입장" % str(meta.get("name", "?")))
+		_add_feed("%s 입장" % str(meta.get("name", "?")).left(12))
 
 
 func _on_presence_left(key: String, meta: Dictionary) -> void:
@@ -743,7 +849,7 @@ func _on_presence_left(key: String, meta: Dictionary) -> void:
 		if peers[id].get("owner", "") == key:
 			peers.erase(id)
 	if key != my_id:
-		_add_feed("%s 퇴장" % str(meta.get("name", "?")))
+		_add_feed("%s 퇴장" % str(meta.get("name", "?")).left(12))
 
 
 func _update_peers(delta: float) -> void:
@@ -882,6 +988,8 @@ func _update_ai(delta: float) -> void:
 
 
 func _ai_take_hit(aid: String, shooter: String, bid: String) -> void:
+	own_shots.erase(bid)
+	seen_hits[bid] = elapsed
 	var ai: Dictionary = ai_planes[aid]
 	ai["hp"] = int(ai["hp"]) - 1
 	var killed := int(ai["hp"]) <= 0
@@ -916,19 +1024,24 @@ func _send_ai() -> void:
 
 
 func _on_ai_states(p: Dictionary) -> void:
-	var host_id := str(p.get("owner", ""))
-	if host_id == "" or host_id == my_id:
+	# AI는 방장(presence 키가 가장 작은 사람)이 보낸 것만 받습니다.
+	var host_id := _id(p.get("owner"))
+	if not _is_human(host_id) or _humans()[0] != host_id:
 		return
-	remote_ai_level = int(p.get("level", -1))
+	remote_ai_level = int(_num(p.get("level"), -1, -1, AI_LEVELS.size() - 1))
 	var ids := {}
 	var list: Variant = p.get("list", [])
 	if typeof(list) == TYPE_ARRAY:
-		for s in list:
-			if typeof(s) != TYPE_DICTIONARY or str(s.get("id", "")) == "":
+		for s in list.slice(0, AI_MAX_COUNT):
+			if typeof(s) != TYPE_DICTIONARY:
 				continue
-			var id := str(s["id"])
+			# AI id는 "방장id-aiN" 꼴이어야 합니다. 사람이나 다른 방장의 id를 덮어쓰지 못하게 합니다.
+			var id := _id(s.get("id"))
+			if not id.begins_with(host_id + "-ai"):
+				continue
+			if not _upsert_peer(id, s):
+				continue
 			ids[id] = true
-			_upsert_peer(id, s)
 			peers[id]["ai"] = true
 			peers[id]["owner"] = host_id
 	for id in peers.keys():
@@ -963,7 +1076,7 @@ func _name_of(id: String) -> String:
 	if ai_planes.has(id):
 		return str(ai_planes[id]["name"])
 	if rt and rt.presence.has(id):
-		return str(rt.presence[id].get("name", "?"))
+		return str(rt.presence[id].get("name", "?")).left(12)
 	return "?"
 
 
