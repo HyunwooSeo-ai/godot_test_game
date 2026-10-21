@@ -52,6 +52,9 @@ powershell -ExecutionPolicy Bypass -File tools/serve-web.ps1
 - `vercel.json`이 빌드·설치 단계를 끄고 `web/`을 출력 폴더로 지정합니다. GitHub `main`에 푸시하면 Vercel이 자동 배포합니다.
 - 웹에서는 시스템 글꼴을 쓸 수 없어 `fonts/NanumGothic-Regular.ttf`(OFL, 라이선스는 `fonts/OFL.txt`)를 포함합니다. 지우면 한글이 깨집니다.
 - 터치 조작은 없어서 휴대폰에서는 플레이할 수 없습니다.
+- `web/.gdignore`는 Godot가 `web/` 안의 파일을 리소스로 가져오지 않게 합니다. 지우면 `.import` 파일이 생기고 pck에도 섞입니다.
+- 푸시 후 배포가 반영됐는지는 `curl -s https://godottestgame.vercel.app/<파일> | grep <바뀐 내용>`을 반복해 확인합니다(보통 30초 안).
+- `og-image.png`는 `--screenshot`으로 찍은 게임 화면을 1200×630으로 잘라 제목을 얹은 것입니다. 그래픽을 크게 바꾸면 다시 만듭니다.
 
 ### SEO · AEO · GEO
 
@@ -96,3 +99,12 @@ powershell -ExecutionPolicy Bypass -File tools/serve-web.ps1
 
 - `Dictionary` 값처럼 Variant를 돌려주는 식에 `:=`를 쓰면 타입 추론 오류가 납니다. `var x: Vector2 = d["pos"]`처럼 타입을 적거나 `float()`, `str()`로 감쌉니다.
 - 비행기, 총알, 효과는 모두 Dictionary로 다룹니다. 키를 바꿀 때는 보내는 쪽(`_send_state`, `_send_ai`)과 받는 쪽(`_upsert_peer`)을 함께 바꿉니다.
+
+## 환경 메모
+
+- Node.js와 Python은 없습니다. Git은 `C:\Program Files\Git\cmd\git.exe`이고, push는 비대화형 셸에서도 인증 없이 됩니다.
+- PowerShell 5.1에서 `git commit -m`의 메시지에 큰따옴표(`"`)가 있으면 인자가 깨집니다. 메시지를 파일로 써서 `git commit -F 파일`로 커밋합니다.
+- 한글이 들어간 `.ps1` 스크립트는 UTF-8 **BOM**으로 저장해야 PowerShell 5.1이 제대로 읽습니다.
+- 봇 여러 개를 동시에 띄우면 가끔 일부가 `joined: false`로 끝납니다(재현 안 되는 일시적 실패). 코드를 의심하기 전에 한 번 더 돌려 봅니다.
+- 내장 브라우저 창이 가려져 있으면 게임 프레임이 느려져, 키 입력과 속도를 자동화로 확인할 수 없습니다. 조작감은 사람이 직접 확인합니다.
+- Claude in Chrome은 `searchadvisor.naver.com`을 안전 제한으로 열지 못합니다(네이버 작업은 사용자가 직접). Google 검증 도구(validator.schema.org 등)는 CAPTCHA를 띄울 수 있습니다.
