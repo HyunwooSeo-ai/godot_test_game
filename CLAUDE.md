@@ -144,3 +144,5 @@ powershell -ExecutionPolicy Bypass -File tools/avi-to-mp4.ps1 -Src promo/output/
 - Claude in Chrome 연결은 세션 중에도 끊길 수 있습니다. 작업 전에 연결된 브라우저 목록부터 확인하고, 0개면 확장의 Claude 계정이 이 앱 계정(구글 계정 아님)과 같은지 사용자에게 확인을 부탁합니다.
 - 새 스크립트를 추가한 직후 첫 `--export-release`는 클래스 스캔 때문에 종료 코드 -1을 낼 수 있습니다. 한 번 더 실행해 0이 나오면 정상입니다.
 - 이 PC에는 HEVC(H.265) 코덱이 없어 Media Foundation이 HEVC 영상을 재생하거나 변환하지 못합니다. 휴대폰·카카오톡 영상은 대개 HEVC입니다. `avi-to-mp4.ps1`이 만드는 H.264는 문제없습니다.
+- 브라우저에서 출격하면 그 브라우저의 `user://settings.cfg`(닉네임·방·AI 설정)가 덮어써집니다. 자동화 테스트는 사용자 Chrome 대신 내장 브라우저에서 하고, 사용자 Chrome에서 했다면 그 사실을 알립니다.
+- `tools/serve-web.ps1`은 `vercel.json` 헤더(CSP 등)를 보내지 않습니다. CSP를 바꾼 뒤에는 헤더를 붙이는 임시 서버로 확인하거나, 푸시 후 `curl -sI`로 헤더를 보고 실제 사이트에서 출격까지 해 봅니다.
