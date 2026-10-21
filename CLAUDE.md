@@ -64,6 +64,20 @@ powershell -ExecutionPolicy Bypass -File tools/serve-web.ps1
 - `web/`에 직접 둔 정적 파일: `robots.txt`(AI 크롤러 포함 전체 허용), `sitemap.xml`, `llms.txt`, `og-image.png`(1200×630). 내보내기는 `index.*`만 덮어쓰므로 지워지지 않습니다. 날짜가 바뀌는 큰 변경이면 `sitemap.xml`의 `lastmod`를 갱신합니다.
 - `web/googlea4d164898e2b8dbd.html`은 Google Search Console 소유권 확인 파일입니다(URL 접두어 속성 `https://godottestgame.vercel.app/`, 사이트맵 제출 완료). 지우면 소유권 확인이 풀립니다. 네이버 서치어드바이저 확인은 `web_shell.html`의 `naver-site-verification` 메타 태그입니다.
 
+## 홍보 영상 (promo/)
+
+```bash
+# 1) 렌더링 → promo/output/sky_duel_promo.avi (1080x1920, 30fps, 28초, 약 40초 걸림)
+powershell -ExecutionPolicy Bypass -File tools/render-promo.ps1
+# 2) MP4 변환(Windows 내장 Media Foundation, H.264+AAC) → promo/output/sky_duel_promo.mp4
+powershell -ExecutionPolicy Bypass -File tools/avi-to-mp4.ps1 -Src promo/output/sky_duel_promo.avi
+```
+
+- `promo/promo.gd`가 `main.tscn`을 SubViewport에 띄우고 `start_demo()`(네트워크 없는 오프라인 데모, 내 비행기는 봇)를 부른 뒤, 그 위에 자막·칩·CTA를 그리고 음악·효과음을 코드로 합성합니다. 장면 시간표는 `CAPTIONS`, `IMPACTS` 상수입니다. 쇼츠 규칙상 30초를 넘기지 않습니다.
+- Movie Maker는 창이 아니라 프로젝트 기본 화면 크기로 녹화하므로, 렌더 스크립트가 잠깐 `override.cfg`로 1080x1920 + stretch `viewport`를 지정하고 끝나면 지웁니다(창이 화면보다 커도 전체 해상도로 그려짐). `override.cfg`가 남아 있으면 게임이 세로 화면으로 뜨니 지웁니다.
+- 스크립트 오류가 나면 빈 장면이 끝없이 녹화되므로 `--quit-after 900`으로 막아 두었습니다. 렌더 전에 `--headless --quit-after 10 res://promo/promo.tscn`으로 오류부터 확인합니다.
+- `promo/`는 웹 내보내기에서 제외(`exclude_filter`)하고, `promo/output/`은 용량 때문에 git에 올리지 않습니다.
+
 ## 구조
 
 - `main.tscn`: `Node2D` 하나에 `main.gd`만 붙어 있습니다. 메뉴 UI와 게임 화면을 모두 코드로 만들고, 게임 화면은 `_draw()`로 그립니다.

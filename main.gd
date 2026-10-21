@@ -100,6 +100,7 @@ var ai_level_option: OptionButton
 
 # 헤드리스 자동 테스트용 봇 (godot --headless -- --bot --name=Bot1 --room=test --quit-after=20)
 var bot_mode := false
+var demo_mode := false       # 홍보 영상용 오프라인 데모(네트워크 없이 AI와 싸움)
 var bot_hp := MAX_HP
 var _args: Dictionary = {}
 var quit_after := 0.0
@@ -469,7 +470,7 @@ func _fire() -> void:
 	var bid := "%s-%d" % [my_id, bullet_seq]
 	var start := _wrap(pos + Vector2.RIGHT.rotated(angle) * 30.0)
 	_add_bullet(bid, my_id, start, angle)
-	rt.send_broadcast("shot", {"id": my_id, "bid": bid, "x": start.x, "y": start.y, "a": angle})
+	_broadcast("shot", {"id": my_id, "bid": bid, "x": start.x, "y": start.y, "a": angle})
 
 
 func _add_bullet(bid: String, owner: String, start: Vector2, a: float) -> void:
@@ -506,7 +507,7 @@ func _take_hit(shooter: String, bid: String) -> void:
 	hp -= 1
 	var killed := hp <= 0
 	stats["hits_taken"] += 1
-	rt.send_broadcast("hit", {"victim": my_id, "shooter": shooter, "bid": bid, "hp": hp, "killed": killed})
+	_broadcast("hit", {"victim": my_id, "shooter": shooter, "bid": bid, "hp": hp, "killed": killed})
 	_spark(pos)
 	if killed:
 		alive = false
@@ -523,7 +524,7 @@ func _take_hit(shooter: String, bid: String) -> void:
 func _send_state() -> void:
 	if not rt:
 		return
-	rt.send_broadcast("state", {
+	_broadcast("state", {
 		"id": my_id, "name": my_name, "color": my_color.to_html(false),
 		"x": snappedf(pos.x, 0.1), "y": snappedf(pos.y, 0.1), "a": snappedf(angle, 0.001),
 		"v": snappedf(speed, 0.1), "hp": hp, "alive": alive, "score": score, "deaths": deaths,
@@ -752,14 +753,14 @@ func _update_ai(delta: float) -> void:
 			var bid := "%s-%d" % [id, ai["fire_seq"]]
 			var start := _wrap(ai["pos"] + Vector2.RIGHT.rotated(a) * 30.0)
 			_add_bullet(bid, str(id), start, a)
-			rt.send_broadcast("shot", {"id": id, "bid": bid, "x": start.x, "y": start.y, "a": a})
+			_broadcast("shot", {"id": id, "bid": bid, "x": start.x, "y": start.y, "a": a})
 
 
 func _ai_take_hit(aid: String, shooter: String, bid: String) -> void:
 	var ai: Dictionary = ai_planes[aid]
 	ai["hp"] = int(ai["hp"]) - 1
 	var killed := int(ai["hp"]) <= 0
-	rt.send_broadcast("hit", {"victim": aid, "shooter": shooter, "bid": bid, "hp": ai["hp"], "killed": killed})
+	_broadcast("hit", {"victim": aid, "shooter": shooter, "bid": bid, "hp": ai["hp"], "killed": killed})
 	_spark(ai["pos"])
 	if killed:
 		ai["alive"] = false
@@ -786,7 +787,7 @@ func _send_ai() -> void:
 			"x": snappedf(p.x, 0.1), "y": snappedf(p.y, 0.1), "a": snappedf(float(ai["angle"]), 0.001),
 			"v": snappedf(float(ai["speed"]), 0.1), "hp": ai["hp"], "alive": ai["alive"], "score": ai["score"],
 		})
-	rt.send_broadcast("ai", {"owner": my_id, "level": ai_level, "list": list})
+	_broadcast("ai", {"owner": my_id, "level": ai_level, "list": list})
 
 
 func _on_ai_states(p: Dictionary) -> void:
@@ -876,7 +877,8 @@ func _update_effects(delta: float) -> void:
 func _bot_controls() -> Array:
 	var best: Variant = null
 	var best_d := INF
-	for peer in peers.values():
+	# 오프라인 데모에서는 내가 방장이라 AI가 peers가 아닌 ai_planes에 있습니다.
+	for peer in peers.values() + ai_planes.values():
 		if bool(peer["alive"]):
 			var d := _wrap_delta(pos, peer["pos"]).length()
 			if d < best_d:
@@ -889,6 +891,27 @@ func _bot_controls() -> Array:
 	var to := _wrap_delta(pos, best["pos"] + lead)
 	var diff := wrapf(to.angle() - angle, -PI, PI)
 	return [clampf(diff * 2.0, -1.0, 1.0), -1.0 if best_d < 250 else 0.5, absf(diff) < 0.6 and best_d < 600]
+
+
+func _broadcast(event: String, payload: Dictionary) -> void:
+	if rt:
+		rt.send_broadcast(event, payload)
+
+
+## 홍보 영상(promo/)에서 부릅니다. 네트워크 없이 내 비행기를 봇이 조종하고, 내가 방장이 되어 AI를 띄웁니다.
+func start_demo(nick: String, ai_n: int, level: int, player_hp: int) -> void:
+	demo_mode = true
+	bot_mode = true
+	bot_hp = player_hp
+	ai_count = ai_n
+	ai_level = level
+	my_id = "demo-me"
+	my_name = nick
+	room = "demo"
+	my_color = Color(0.45, 0.85, 1.0)
+	menu_root.visible = false
+	mode = Mode.PLAYING
+	_spawn()
 
 
 func _log(text: String) -> void:
@@ -1103,12 +1126,14 @@ func _draw() -> void:
 	for c in clouds:
 		if bool(c["high"]):
 			_draw_cloud(c, true)
-	_draw_vignette()
+	if not demo_mode:
+		_draw_vignette()
 
 	if mode == Mode.PLAYING:
 		for pl in planes:
 			_draw_plane_label(pl)
-		_draw_hud()
+		if not demo_mode:
+			_draw_hud()
 
 
 func _draw_sea() -> void:
