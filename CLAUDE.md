@@ -77,6 +77,7 @@ powershell -ExecutionPolicy Bypass -File tools/avi-to-mp4.ps1 -Src promo/output/
 - Movie Maker는 창이 아니라 프로젝트 기본 화면 크기로 녹화하므로, 렌더 스크립트가 잠깐 `override.cfg`로 1080x1920 + stretch `viewport`를 지정하고 끝나면 지웁니다(창이 화면보다 커도 전체 해상도로 그려짐). `override.cfg`가 남아 있으면 게임이 세로 화면으로 뜨니 지웁니다.
 - 스크립트 오류가 나면 빈 장면이 끝없이 녹화되므로 `--quit-after 900`으로 막아 두었습니다. 렌더 전에 `--headless --quit-after 10 res://promo/promo.tscn`으로 오류부터 확인합니다.
 - `promo/`는 웹 내보내기에서 제외(`exclude_filter`)하고, `promo/output/`은 용량 때문에 git에 올리지 않습니다.
+- 검수: `tools/avi-frames.ps1 -Avi <avi> -OutDir <폴더> -Seconds @(1.0, 5.0)`로 지정 시점의 JPEG 프레임과 프레임 수·길이를 뽑습니다. Godot AVI의 영상 청크 이름은 `00db`입니다(`00dc` 아님). `-Seconds`에 배열을 넘기려면 `powershell -File`이 아니라 `&`로 실행합니다.
 
 ## 구조
 
@@ -113,6 +114,8 @@ powershell -ExecutionPolicy Bypass -File tools/avi-to-mp4.ps1 -Src promo/output/
 
 - `Dictionary` 값처럼 Variant를 돌려주는 식에 `:=`를 쓰면 타입 추론 오류가 납니다. `var x: Vector2 = d["pos"]`처럼 타입을 적거나 `float()`, `str()`로 감쌉니다.
 - 비행기, 총알, 효과는 모두 Dictionary로 다룹니다. 키를 바꿀 때는 보내는 쪽(`_send_state`, `_send_ai`)과 받는 쪽(`_upsert_peer`)을 함께 바꿉니다.
+- `Array` 안의 `Vector2`/`Vector3`는 값 타입이라 `for s in arr: s.y += 1`은 원본을 바꾸지 않습니다. 인덱스로 꺼내 고친 뒤 다시 넣습니다.
+- 다른 스크립트(`main.gd`)의 멤버를 쓰는 변수는 `var game: Node2D`처럼 엔진 타입으로 적으면 파싱 오류가 납니다. 타입 없이 `var game`으로 둡니다(`promo.gd` 참고).
 
 ## 환경 메모
 
@@ -122,3 +125,5 @@ powershell -ExecutionPolicy Bypass -File tools/avi-to-mp4.ps1 -Src promo/output/
 - 봇 여러 개를 동시에 띄우면 가끔 일부가 `joined: false`로 끝납니다(재현 안 되는 일시적 실패). 코드를 의심하기 전에 한 번 더 돌려 봅니다.
 - 내장 브라우저 창이 가려져 있으면 게임 프레임이 느려져, 키 입력과 속도를 자동화로 확인할 수 없습니다. 조작감은 사람이 직접 확인합니다.
 - Claude in Chrome은 `searchadvisor.naver.com`을 안전 제한으로 열지 못합니다(네이버 작업은 사용자가 직접). Google 검증 도구(validator.schema.org 등)는 CAPTCHA를 띄울 수 있습니다.
+- 새 스크립트를 추가한 직후 첫 `--export-release`는 클래스 스캔 때문에 종료 코드 -1을 낼 수 있습니다. 한 번 더 실행해 0이 나오면 정상입니다.
+- 이 PC에는 HEVC(H.265) 코덱이 없어 Media Foundation이 HEVC 영상을 재생하거나 변환하지 못합니다. 휴대폰·카카오톡 영상은 대개 HEVC입니다. `avi-to-mp4.ps1`이 만드는 H.264는 문제없습니다.
