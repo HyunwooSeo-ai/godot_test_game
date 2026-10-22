@@ -133,11 +133,32 @@ var round_cooldown := 0.0
 var round_winner := ""
 var esc_armed_left := 0.0      # Esc를 한 번 누른 뒤 두 번째를 기다리는 시간
 var elapsed := 0.0
+
+# 휴대폰 터치 조작. 왼쪽 절반은 떠 있는 조이스틱(민 방향으로 선회, 멀리 밀수록 빠름), 오른쪽 절반은 누르는 동안 발사.
+const JOY_RADIUS := 110.0
+const JOY_HOME := Vector2(200, ARENA.y - 190)
+const FIRE_HOME := Vector2(ARENA.x - 190, ARENA.y - 190)
+const FIRE_RADIUS := 95.0
+const TOUCH_BUTTONS := ["sound", "invite", "leave"]
+var is_phone := false          # 안드로이드·iOS 브라우저. 글자와 메뉴를 키웁니다.
+var touch_mode := false        # 터치 조작 화면을 보일지. 화면을 만지면 켜지고 키보드를 쓰면 꺼집니다.
+var hud_k := 1.0               # HUD 글자 배율(휴대폰은 크게)
+var joy_index := -1            # 조이스틱을 잡은 손가락 번호
+var joy_origin := Vector2.ZERO
+var joy_vec := Vector2.ZERO
+var fire_touches: Dictionary = {}  # 발사 중인 손가락 번호 -> true
+var joined_at := 0.0
+var menu_layer: CanvasLayer
+var menu_panel: PanelContainer
+var help_label: Label
 var stats := {"joined": false, "peers_seen": 0, "states": 0, "shots": 0, "hits_taken": 0, "kills": 0}
 
 
 func _ready() -> void:
 	randomize()
+	is_phone = OS.has_feature("web_android") or OS.has_feature("web_ios")
+	touch_mode = is_phone
+	hud_k = 1.35 if is_phone else 1.0
 	font = _make_font()
 	_build_scenery()
 	_build_layers()
@@ -146,6 +167,13 @@ func _ready() -> void:
 	_apply_invite_from_url()
 	var args := _parse_args()
 	_args = args
+	if args.has("phone"):
+		# PC에서 휴대폰 화면 배치를 확인할 때 씁니다(--phone --screenshot=...).
+		is_phone = true
+		touch_mode = true
+		hud_k = 1.35
+	if is_phone:
+		_fit_menu_for_phone.call_deferred()
 	quit_after = float(args.get("quit-after", "0"))
 	if args.has("bot"):
 		bot_mode = true
@@ -227,6 +255,7 @@ func _style_theme(theme: Theme) -> void:
 func _build_menu() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
+	menu_layer = layer
 	var theme := Theme.new()
 	theme.default_font = font
 	theme.default_font_size = 20
@@ -240,6 +269,7 @@ func _build_menu() -> void:
 
 	var panel := PanelContainer.new()
 	menu_root.add_child(panel)
+	menu_panel = panel
 	var margin := MarginContainer.new()
 	for side in ["left", "right", "top", "bottom"]:
 		margin.add_theme_constant_override("margin_" + side, 28)
@@ -317,8 +347,19 @@ func _build_menu() -> void:
 	status_label = _label("", 16, Color(1.0, 0.75, 0.4))
 	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(status_label)
-	box.add_child(_label("←→ / A D 회전   ↑↓ / W S 속도\nSpace 발사   L 초대 링크   M 소리   Esc 두 번: 나가기", 15, Color(0.75, 0.75, 0.8)))
+	help_label = _label("←→ / A D 회전   ↑↓ / W S 속도\nSpace 발사   L 초대 링크   M 소리   Esc 두 번: 나가기", 15, Color(0.75, 0.75, 0.8))
+	box.add_child(help_label)
 	_load_settings()
+
+
+func _fit_menu_for_phone() -> void:
+	# 휴대폰은 1280x720 화면이 절반 정도로 줄어 글자가 작아지므로, 화면 높이에 맞는 한 메뉴를 키웁니다.
+	help_label.text = "왼쪽 화면을 끌어 조종(멀리 밀수록 빨라요)\n오른쪽 화면을 누르고 있으면 발사"
+	await get_tree().process_frame
+	var h := maxf(menu_panel.size.y, 1.0)
+	var k := clampf((ARENA.y - 16.0) / h, 1.0, 1.4)
+	menu_layer.scale = Vector2(k, k)
+	menu_layer.offset = ARENA * (1.0 - k) / 2.0
 
 
 func _load_settings() -> void:
@@ -439,6 +480,9 @@ func _on_joined() -> void:
 	_log("joined room=%s id=%s" % [room, my_id])
 	rt.track({"id": my_id, "name": my_name, "color": my_color.to_html(false)})
 	_spawn()
+	joined_at = elapsed
+	_reset_touch()
+	_set_page_playing(true)
 	_add_feed("'%s' 방에 입장했습니다" % room)
 	if room_notice != "":
 		_add_feed(room_notice)
@@ -476,25 +520,114 @@ func _back_to_menu(message: String) -> void:
 	seen_hits.clear()
 	feed.clear()
 	trails.clear()
+	_reset_touch()
+	_set_page_playing(false)
 	menu_root.visible = true
 	join_button.disabled = false
 	status_label.text = message
 
 
+func _set_page_playing(on: bool) -> void:
+	# 휴대폰에서는 게임 중에 셸의 "게임 정보" 버튼이 발사 영역을 가리지 않도록 숨깁니다(web_shell.html의 body.playing).
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("document.body.classList.toggle('playing', %s)" % ("true" if on else "false"), true)
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
+		touch_mode = false
 		if event.keycode == KEY_ESCAPE and mode == Mode.PLAYING:
-			# 실수로 나가지 않도록 2초 안에 한 번 더 눌러야 나갑니다.
-			if esc_armed_left > 0.0:
-				_leave()
-			else:
-				esc_armed_left = 2.0
-				_add_feed("Esc를 한 번 더 누르면 메뉴로 나가요")
+			_request_leave("Esc를 한 번 더 누르면 메뉴로 나가요")
 		elif event.physical_keycode == KEY_M and mode == Mode.PLAYING:
 			_toggle_mute()
 		elif event.physical_keycode == KEY_L and mode == Mode.PLAYING:
 			_copy_invite(room)
 			_add_feed("초대 링크를 복사했어요. 친구에게 보내 주세요! (L)")
+
+
+func _request_leave(hint: String) -> void:
+	# 실수로 나가지 않도록 2초 안에 한 번 더 눌러야 나갑니다.
+	if esc_armed_left > 0.0:
+		_leave()
+	else:
+		esc_armed_left = 2.0
+		_add_feed(hint)
+
+
+# ---------------------------------------------------------------- 터치 조작
+
+func _input(event: InputEvent) -> void:
+	if not (event is InputEventScreenTouch or event is InputEventScreenDrag):
+		return
+	touch_mode = true
+	if mode != Mode.PLAYING:
+		return  # 메뉴는 터치가 마우스로 바뀌어 버튼·입력칸에 그대로 전달됩니다.
+	var p: Vector2 = event.position
+	var idx: int = event.index
+	if event is InputEventScreenTouch:
+		if event.pressed:
+			var button := _touch_button_at(p)
+			if button != "":
+				_press_touch_button(button)
+			elif p.x < ARENA.x * 0.5:
+				if joy_index == -1:
+					joy_index = idx
+					joy_origin = p
+					joy_vec = Vector2.ZERO
+			else:
+				fire_touches[idx] = true
+		else:
+			if idx == joy_index:
+				joy_index = -1
+				joy_vec = Vector2.ZERO
+			fire_touches.erase(idx)
+	elif idx == joy_index:
+		joy_vec = (p - joy_origin).limit_length(JOY_RADIUS)
+
+
+func _reset_touch() -> void:
+	joy_index = -1
+	joy_vec = Vector2.ZERO
+	fire_touches.clear()
+
+
+func _touch_button_rect(i: int) -> Rect2:
+	# 아래 가운데의 작은 버튼 3개(조이스틱·발사 영역 사이)
+	var w := 132.0
+	var gap := 14.0
+	var x0 := ARENA.x / 2.0 - (w * 3.0 + gap * 2.0) / 2.0
+	return Rect2(x0 + i * (w + gap), ARENA.y - 70.0, w, 54.0)
+
+
+func _touch_button_at(p: Vector2) -> String:
+	for i in TOUCH_BUTTONS.size():
+		if _touch_button_rect(i).grow(6.0).has_point(p):
+			return TOUCH_BUTTONS[i]
+	return ""
+
+
+func _press_touch_button(button: String) -> void:
+	match button:
+		"sound":
+			_toggle_mute()
+		"invite":
+			_copy_invite(room)
+			_add_feed("초대 링크를 복사했어요. 친구에게 보내 주세요!")
+		"leave":
+			_request_leave("나가기를 한 번 더 누르면 메뉴로 나가요")
+
+
+func _touch_controls() -> Array:
+	# [선회, 가속, 발사]. 조이스틱 방향으로 기수를 돌리고, 민 거리로 목표 속도를 정합니다.
+	var turn := 0.0
+	var thrust := 0.0
+	var mag := joy_vec.length() / JOY_RADIUS
+	if joy_index != -1 and mag > 0.2:
+		var diff := wrapf(joy_vec.angle() - angle, -PI, PI)
+		turn = clampf(diff * 3.0, -1.0, 1.0)
+		var want := lerpf(MIN_SPEED, MAX_SPEED, clampf((mag - 0.2) / 0.8, 0.0, 1.0))
+		thrust = clampf((want - speed) / 30.0, -1.0, 1.0)
+	return [turn, thrust, not fire_touches.is_empty()]
 
 
 func _notification(what: int) -> void:
@@ -614,6 +747,11 @@ func _update_me(delta: float) -> void:
 		if Input.is_physical_key_pressed(KEY_DOWN) or Input.is_physical_key_pressed(KEY_S):
 			thrust -= 1.0
 		fire = Input.is_physical_key_pressed(KEY_SPACE)
+		if joy_index != -1 or not fire_touches.is_empty():
+			var t := _touch_controls()
+			turn = clampf(turn + float(t[0]), -1.0, 1.0)
+			thrust = clampf(thrust + float(t[1]), -1.0, 1.0)
+			fire = fire or bool(t[2])
 
 	turn_rate = turn * TURN_SPEED
 	angle = wrapf(angle + turn_rate * delta, -PI, PI)
@@ -1680,6 +1818,9 @@ func _draw_hud() -> void:
 	if shown_ai > 0 and level >= 0 and level < AI_LEVELS.size():
 		ai_text += " (%s)" % AI_LEVELS[level]["name"]
 
+	# 휴대폰에서는 HUD를 hud_k배로 키웁니다. 구석에 붙은 상자는 그 구석을 기준으로 키워 화면 밖으로 나가지 않게 합니다.
+	var k := hud_k
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2(k, k))
 	var info := "방 %s   ·   접속 %d명   ·   %s" % [room, _humans().size(), ai_text]
 	var info_w := font.get_string_size(info, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x
 	draw_style_box(hud_box, Rect2(12, 10, info_w + 32, 34))
@@ -1693,6 +1834,7 @@ func _draw_hud() -> void:
 		_text(Vector2(18, y), str(f["text"]), 15, Color(1, 1, 1, clampf(float(f["t"]), 0.0, 1.0)))
 		y += 22.0
 
+	draw_set_transform(Vector2(ARENA.x * (1.0 - k), 0.0), 0.0, Vector2(k, k))
 	var board := _board()
 	var bx := ARENA.x - 252.0
 	draw_style_box(hud_box, Rect2(bx, 10, 240, 44 + board.size() * 26))
@@ -1707,6 +1849,7 @@ func _draw_hud() -> void:
 		_text(Vector2(bx + 180, row), str(entry["score"]), 15, Color(1, 0.86, 0.45), HORIZONTAL_ALIGNMENT_RIGHT, 44)
 		row += 26.0
 
+	draw_set_transform(ARENA / 2.0 * (1.0 - k), 0.0, Vector2(k, k))
 	if round_over_left > 0.0:
 		var winner_text := "%s 승리!" % round_winner
 		draw_style_box(hud_box, Rect2(ARENA.x / 2 - 300, ARENA.y / 2 - 150, 600, 120))
@@ -1715,4 +1858,35 @@ func _draw_hud() -> void:
 	if not alive:
 		draw_style_box(hud_box, Rect2(ARENA.x / 2 - 240, ARENA.y / 2 - 42, 480, 64))
 		_text(Vector2(0, ARENA.y / 2), "격추되었습니다! %.1f초 뒤 다시 출격" % maxf(respawn_left, 0.0), 24, Color(1, 0.68, 0.55), HORIZONTAL_ALIGNMENT_CENTER, ARENA.x)
-	_text(Vector2(18, ARENA.y - 18), "←→ / A D 회전    ↑↓ / W S 속도    Space 발사    L 초대 링크    M 소리 %s    Esc 두 번: 나가기" % ("꺼짐" if muted else "켜짐"), 14, Color(1, 1, 1, 0.7))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	if touch_mode:
+		_draw_touch_controls()
+	else:
+		_text(Vector2(18, ARENA.y - 18), "←→ / A D 회전    ↑↓ / W S 속도    Space 발사    L 초대 링크    M 소리 %s    Esc 두 번: 나가기" % ("꺼짐" if muted else "켜짐"), 14, Color(1, 1, 1, 0.7))
+
+
+func _draw_touch_controls() -> void:
+	# 조이스틱: 잡고 있으면 손가락을 댄 자리에, 아니면 기본 자리에 흐리게 보입니다.
+	var held := joy_index != -1
+	var base := joy_origin if held else JOY_HOME
+	draw_circle(base, JOY_RADIUS, Color(1, 1, 1, 0.10 if held else 0.05))
+	draw_arc(base, JOY_RADIUS, 0, TAU, 48, Color(1, 1, 1, 0.35 if held else 0.18), 3.0, true)
+	draw_circle(base + joy_vec, 38, Color(1, 1, 1, 0.45 if held else 0.18))
+	if not held:
+		_text(base + Vector2(-JOY_RADIUS, JOY_RADIUS + 30), "조종", 22, Color(1, 1, 1, 0.45), HORIZONTAL_ALIGNMENT_CENTER, JOY_RADIUS * 2.0)
+
+	var firing := not fire_touches.is_empty()
+	draw_circle(FIRE_HOME, FIRE_RADIUS, Color(1, 0.56, 0.22, 0.5 if firing else 0.22))
+	draw_arc(FIRE_HOME, FIRE_RADIUS, 0, TAU, 48, Color(1, 0.8, 0.55, 0.8 if firing else 0.45), 3.0, true)
+	_text(FIRE_HOME + Vector2(-FIRE_RADIUS, 10), "발사", 30, Color(1, 1, 1, 0.9), HORIZONTAL_ALIGNMENT_CENTER, FIRE_RADIUS * 2.0)
+
+	var labels := {"sound": "소리 끔" if muted else "소리 켬", "invite": "초대", "leave": "나가기"}
+	for i in TOUCH_BUTTONS.size():
+		var r := _touch_button_rect(i)
+		draw_style_box(hud_box, r)
+		_text(Vector2(r.position.x, r.position.y + 36), labels[TOUCH_BUTTONS[i]], 22, Color(0.92, 0.96, 1), HORIZONTAL_ALIGNMENT_CENTER, r.size.x)
+
+	# 처음 12초 동안만 조작법을 알려 줍니다.
+	if elapsed - joined_at < 12.0:
+		var a := clampf(12.0 - (elapsed - joined_at), 0.0, 1.0)
+		_text(Vector2(0, ARENA.y - 96), "왼쪽 끌기: 조종(멀리 밀면 빨라요) · 오른쪽 누르기: 발사", 22, Color(1, 0.9, 0.6, a), HORIZONTAL_ALIGNMENT_CENTER, ARENA.x)

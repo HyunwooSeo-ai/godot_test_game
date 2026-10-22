@@ -52,7 +52,13 @@ powershell -ExecutionPolicy Bypass -File tools/serve-web.ps1
 - `vercel.json`이 빌드·설치 단계를 끄고 `web/`을 출력 폴더로 지정합니다. GitHub `main`에 푸시하면 Vercel이 자동 배포합니다.
 - `vercel.json`은 모든 경로에 보안 헤더(CSP, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy)를 붙입니다. Godot에 `'wasm-unsafe-eval'`, `JavaScriptBridge.eval`에 `'unsafe-eval'`, 셸 인라인 스크립트에 `'unsafe-inline'`이 필요합니다. `connect-src`는 Supabase wss 주소만 허용하므로 다른 서버에 접속하게 되면 함께 고칩니다. `frame-ancestors 'self'`라 CrazyGames·Poki 같은 포털 iframe에 넣으려면 그 도메인을 추가해야 합니다.
 - 웹에서는 시스템 글꼴을 쓸 수 없어 `fonts/NanumGothic-Regular.ttf`(OFL, 라이선스는 `fonts/OFL.txt`)를 포함합니다. 지우면 한글이 깨집니다.
-- 터치 조작은 없어서 휴대폰에서는 플레이할 수 없습니다. 그래서 `web_shell.html`이 터치 전용 기기를 감지하면 엔진을 받기 전에 "PC에서 플레이해 주세요" 안내(`#mobile-notice`, 링크 복사·그래도 열어 보기)를 띄우고, 엔진은 `startEngine()`을 부를 때만 받습니다.
+- 휴대폰(안드로이드 크롬 기준)은 가로 화면 터치 조작으로 플레이합니다.
+  - 셸: 터치 전용 기기면 `<html>`에 `is-phone`을 붙이고 엔진을 받기 전에 시작 화면(`#mobile-notice`)을 띄웁니다. "가로 화면으로 시작하기"가 전체 화면 → `screen.orientation.lock('landscape')`를 요청한 뒤 `startEngine()`을 부릅니다(가로 고정은 전체 화면일 때만, 사용자 동작 안에서만 됩니다). 세로로 들면 `#rotate-notice`가 덮습니다. iOS는 둘 다 지원하지 않아 직접 돌려야 합니다.
+  - 게임(`main.gd` "터치 조작" 섹션): `_input`이 `InputEventScreenTouch/Drag`를 받아 왼쪽 절반은 떠 있는 조이스틱(민 방향으로 기수, 민 거리로 목표 속도), 오른쪽 절반은 누르는 동안 발사, 아래 가운데 버튼 3개(소리·초대·나가기 두 번)로 씁니다. 메뉴에서는 터치가 마우스로 바뀌어 UI에 그대로 갑니다.
+  - `is_phone`(`web_android`/`web_ios` 기능 태그)이면 HUD를 `hud_k`(1.35)배, 메뉴를 화면 높이에 맞게(최대 1.4배) 키웁니다. 터치 조작 화면은 `touch_mode`일 때만 그리며, 화면을 만지면 켜지고 키보드를 누르면 꺼집니다.
+  - 게임 중에는 `main.gd`가 `body.playing`을 켜서 휴대폰의 "게임 정보" 버튼을 숨깁니다(발사 영역을 가리지 않게).
+  - 입력칸에 휴대폰 키보드가 뜨도록 `export_presets.cfg`의 `html/experimental_virtual_keyboard=true`입니다.
+  - PC에서 휴대폰 배치를 보려면 `--phone --screenshot=경로`(창 모드)를 씁니다.
 - 초대 링크는 `?room=방이름`입니다. 웹에서 `JavaScriptBridge`로 읽어 메뉴의 방 이름을 채우고(`_apply_invite_from_url`), 메뉴 버튼·L 키가 `DisplayServer.clipboard_set`으로 복사합니다. PC 버전은 `SITE_URL`로 링크를 만듭니다. canonical은 `?room` 없는 주소라 SEO에는 영향이 없습니다.
 - 효과음(발사·피격·폭발·출격)은 `main.gd`의 "효과음" 섹션이 코드로 합성하고, 거리만큼 작게 냅니다. M 키로 끄고 켜며 `user://settings.cfg`의 `muted`에 저장합니다. 데모(홍보 영상)·봇 모드에서는 소리를 내지 않습니다.
 - 첫 접속 다운로드는 Vercel 브로틀리 압축 덕분에 약 10.5MB(wasm 9.3MB)입니다. 문구를 바꿀 때 참고합니다.
