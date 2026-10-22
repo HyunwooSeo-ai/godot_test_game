@@ -30,6 +30,8 @@ Godot은 설치 프로그램 없이 `%USERPROFILE%\Apps\Godot`에 풀어 둔 실
 | `--hp=N` | 봇의 체력을 바꿉니다. 격추 흐름을 빨리 확인할 때 씁니다(`--hp=1`). |
 | `--ai=N --level=0~2` | 봇이 방장일 때 띄울 AI 수와 난이도입니다(기본 3대, 보통). 봇은 메뉴 설정 파일을 쓰지 않습니다. |
 | `--screenshot=경로` | 종료 직전 게임 화면을 PNG로 저장합니다. 창 모드에서만 의미가 있습니다. |
+| `--win=N` | 봇의 판 목표 격추 수를 바꿉니다(기본 `WIN_SCORE`). |
+| `--phone` | 휴대폰 배치(터치 조작 화면, HUD·메뉴 확대)로 띄웁니다. `--screenshot`과 함께 씁니다. |
 
 검증할 때는 같은 `--room`으로 `--headless` 봇 두 개를 동시에 띄워 `RESULT`의 `states`, `hits_given`/`hits_taken`, `kills`, `ai_owned`/`ai_seen`을 비교합니다. 혼자 들어간 봇은 `ai_owned: 3`이 나와야 합니다. 화면 확인은 OS 화면 캡처 대신 `--screenshot`을 씁니다. OS 캡처는 다른 창이 찍힐 수 있습니다. 끊김 점검에는 `RESULT`의 `pred_err`/`lin_err`(새 state가 왔을 때 곡선 예측·직선 예측이 빗나간 평균 px, `_max`는 최대)와 `worst_frame_ms`(시작 3초 뒤 가장 긴 프레임, 창 모드에서만 의미 있음)를 봅니다.
 
@@ -63,6 +65,9 @@ powershell -ExecutionPolicy Bypass -File tools/serve-web.ps1
 - 효과음(발사·피격·폭발·출격)은 `main.gd`의 "효과음" 섹션이 코드로 합성하고, 거리만큼 작게 냅니다. M 키로 끄고 켜며 `user://settings.cfg`의 `muted`에 저장합니다. 데모(홍보 영상)·봇 모드에서는 소리를 내지 않습니다.
 - 첫 접속 다운로드는 Vercel 브로틀리 압축 덕분에 약 10.5MB(wasm 9.3MB)입니다. 문구를 바꿀 때 참고합니다.
 - 로딩 화면은 `splash.png`(1280×720)이고 `project.godot`의 `application/boot_splash/image`로 지정합니다. 웹에서는 내보낼 때 `web/index.png`가 됩니다.
+- `web/.gdignore`는 Godot가 `web/` 안의 파일을 리소스로 가져오지 않게 합니다. 지우면 `.import` 파일이 생기고 pck에도 섞입니다.
+- 푸시 후 배포가 반영됐는지는 `curl -s https://godottestgame.vercel.app/<파일> | grep <바뀐 내용>`을 반복해 확인합니다(보통 30초 안).
+- `og-image.png`는 `--screenshot`으로 찍은 게임 화면을 1200×630으로 잘라 제목을 얹은 것입니다. 그래픽을 크게 바꾸면 다시 만듭니다.
 
 ### 판 진행과 조작 보조
 
@@ -70,9 +75,6 @@ powershell -ExecutionPolicy Bypass -File tools/serve-web.ps1
 - `WIN_SCORE`(5)를 먼저 채우면 그 판 승리입니다(`_update_round`). 서버가 없으므로 모든 클라이언트가 같은 점수판(`_board()`)을 보고 각자 승리를 발표하고, `ROUND_BREAK`(5초) 뒤 각자 자기 점수를(방장은 AI 점수도) 0으로 돌립니다. 새 판 직후 `ROUND_COOLDOWN`(2초)은 늦게 도착한 옛 점수로 다시 끝나지 않도록 판정을 쉽니다. 발표 중에는 발사가 막힙니다. 봇은 `--win=N`으로 목표를 바꿔 빠르게 시험합니다.
 - 이름표는 겹치면 17px씩 위로 밀리고(최대 4줄) 기체와 가는 선으로 이어집니다. 내 이름표가 먼저 자리를 잡습니다.
 - Esc는 2초 안에 두 번 눌러야 메뉴로 나갑니다(`esc_armed_left`).
-- `web/.gdignore`는 Godot가 `web/` 안의 파일을 리소스로 가져오지 않게 합니다. 지우면 `.import` 파일이 생기고 pck에도 섞입니다.
-- 푸시 후 배포가 반영됐는지는 `curl -s https://godottestgame.vercel.app/<파일> | grep <바뀐 내용>`을 반복해 확인합니다(보통 30초 안).
-- `og-image.png`는 `--screenshot`으로 찍은 게임 화면을 1200×630으로 잘라 제목을 얹은 것입니다. 그래픽을 크게 바꾸면 다시 만듭니다.
 
 ### SEO · AEO · GEO
 
@@ -141,12 +143,13 @@ powershell -ExecutionPolicy Bypass -File tools/avi-to-mp4.ps1 -Src promo/output/
 
 ## 환경 메모
 
-- Node.js와 Python은 없습니다. Git은 `C:\Program Files\Git\cmd\git.exe`이고, push는 비대화형 셸에서도 인증 없이 됩니다.
+- Node.js 24와 Python 3.12가 설치되어 있습니다(2026-10-22 확인). Git은 `C:\Program Files\Git\cmd\git.exe`이고, push는 비대화형 셸에서도 인증 없이 됩니다.
 - PowerShell 5.1에서 `git commit -m`의 메시지에 큰따옴표(`"`)가 있으면 인자가 깨집니다. 메시지를 파일로 써서 `git commit -F 파일`로 커밋합니다.
 - 한글이 들어간 `.ps1` 스크립트는 UTF-8 **BOM**으로 저장해야 PowerShell 5.1이 제대로 읽습니다.
 - 봇 여러 개를 동시에 띄우면 가끔 일부가 `joined: false`로 끝납니다(재현 안 되는 일시적 실패). 코드를 의심하기 전에 한 번 더 돌려 봅니다.
 - 내장 브라우저 창이 가려져 있으면 게임 프레임이 느려져, 키 입력과 속도를 자동화로 확인할 수 없습니다. 조작감은 사람이 직접 확인합니다.
-- 내장 브라우저 화면 크기 흉내: `mobile` 프리셋은 모바일 안내 확인에 쓸 수 있지만, 사용자 지정 크기(예: 1280×800)에서는 Godot 캔버스가 구석에 작게 그려져 데스크톱 확인에 쓸 수 없습니다.
+- 내장 브라우저로 휴대폰 확인: 폭 768 미만이면 안드로이드로 흉내 냅니다. `mobile` 프리셋(세로)은 시작 화면·회전 안내를, 사용자 지정 `740×360`은 가로 플레이를 확인합니다. 클릭은 마우스로 들어가 터치 조작이 켜지지 않으므로 `#canvas`에 `new TouchEvent('touchstart'|'touchmove'|'touchend', {touches, changedTouches})`를 보내 시험합니다. 데스크톱 크기의 사용자 지정(예: 1280×800)은 캔버스가 구석에 작게 그려져 쓸 수 없습니다.
+- 내장 브라우저에서 휴대폰 흉내 중에 "가로 화면으로 시작하기"를 누르면 가끔 게임 화면이 확대되어 잘려 보입니다. 다시 해 보면 재현되지 않아 흉내 기능의 문제로 보지만, 실제 기기에서는 아직 확인하지 않았습니다.
 - 내장 브라우저는 `index.png` 같은 정적 파일을 캐시해 배포 직후 옛 그림을 보여 줄 수 있습니다. 서버 쪽은 `curl -sI`로 크기를 확인하고, 브라우저에서는 `fetch(url, {cache: 'reload'})` 뒤 다시 엽니다.
 - Claude in Chrome은 `searchadvisor.naver.com`을 안전 제한으로 열지 못합니다(네이버 작업은 사용자가 직접). Google 검증 도구(validator.schema.org 등)는 CAPTCHA를 띄울 수 있습니다.
 - Claude in Chrome 연결은 세션 중에도 끊길 수 있습니다. 작업 전에 연결된 브라우저 목록부터 확인하고, 0개면 확장의 Claude 계정이 이 앱 계정(구글 계정 아님)과 같은지 사용자에게 확인을 부탁합니다.
